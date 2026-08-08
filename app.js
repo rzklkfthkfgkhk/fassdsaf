@@ -157,21 +157,15 @@ async function fetchAnimeById(id) {
   }
 }
 
-// ---------- ПОЛУЧЕНИЕ ВИДЕО ЧЕРЕЗ API CONSUMET ----------
-// Используем публичное API consumet для получения ID аниме на Gogoanime
+// ---------- ПОЛУЧЕНИЕ ВИДЕО ЧЕРЕЗ CONSUMET API ----------
 const CONSUMET_API = 'https://api.consumet.org/anime/gogoanime';
-
-// Кэшируем ID, чтобы не делать повторные запросы
-const animeIdCache = {};
+const ANIME_ID_CACHE = {};
 
 async function getAnimeId(animeTitle) {
-  // Проверяем кэш
-  const cacheKey = animeTitle.toLowerCase();
-  if (animeIdCache[cacheKey]) {
-    return animeIdCache[cacheKey];
-  }
+  const key = animeTitle.toLowerCase();
+  if (ANIME_ID_CACHE[key]) return ANIME_ID_CACHE[key];
 
-  // Формируем слаг для поиска (транслитерация)
+  // Формируем слаг для поиска
   const slug = animeTitle
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -180,37 +174,33 @@ async function getAnimeId(animeTitle) {
   try {
     const url = `${CONSUMET_API}/${slug}`;
     console.log('Запрос к consumet:', url);
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.warn('consumet ответил ошибкой', resp.status);
+      return null;
     }
-    const data = await response.json();
-    // consumet возвращает объект с полем results
+    const data = await resp.json();
+    console.log('Ответ consumet:', data);
     if (data && data.results && data.results.length > 0) {
-      // Берём первый результат (обычно самый релевантный)
       const id = data.results[0].id;
-      animeIdCache[cacheKey] = id;
+      ANIME_ID_CACHE[key] = id;
       console.log('Найден ID:', id);
       return id;
     } else {
-      console.warn('Аниме не найдено в consumet');
+      console.warn('consumet не нашёл аниме');
       return null;
     }
-  } catch (error) {
-    console.error('Ошибка при запросе к consumet:', error);
+  } catch (e) {
+    console.error('Ошибка запроса к consumet:', e);
     return null;
   }
 }
 
 async function getVideoUrl(animeTitle, episode) {
   const id = await getAnimeId(animeTitle);
-  if (!id) {
-    return null;
-  }
-  // Формируем ссылку на плеер vibeplayer.site
-  const videoUrl = `https://vibeplayer.site/embed/${id}-episode-${episode}`;
-  console.log('Ссылка на плеер:', videoUrl);
-  return videoUrl;
+  if (!id) return null;
+  // Используем надёжный плеер vidsrc.to
+  return `https://vidsrc.to/embed/anime/${id}/${episode}`;
 }
 
 // ---------- ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ ВИДЕО ----------
@@ -218,37 +208,31 @@ async function loadVideo(anime, episode) {
   const iframe = $('#playerIframe');
   if (!iframe) return;
 
-  // Если есть ручная ссылка – используем её
+  // Ручная ссылка имеет приоритет
   if (STATE.manualVideoUrl) {
     iframe.src = STATE.manualVideoUrl;
     return;
   }
 
-  // Получаем название для поиска
   const title = anime.title.romaji || anime.title.english || anime.title.native || '';
-
-  // Показываем индикатор загрузки
   const loadingMsg = document.getElementById('loadingMessage');
   if (loadingMsg) loadingMsg.style.display = 'block';
   iframe.src = '';
 
-  // Пытаемся получить ссылку на видео
   const videoUrl = await getVideoUrl(title, episode);
-
   if (loadingMsg) loadingMsg.style.display = 'none';
 
   if (videoUrl) {
     iframe.src = videoUrl;
+    console.log('Видео загружено:', videoUrl);
   } else {
-    // Если не удалось, показываем сообщение и предлагаем ручной ввод
-    alert('Не удалось найти видео автоматически. Попробуйте вставить ссылку вручную (кнопка "Ссылка").');
-    // Переключаемся на ручной режим
+    alert('Не удалось найти видео автоматически.\nПопробуйте вставить ссылку вручную (вкладка "Ссылка").');
     const manualTab = document.querySelector('.source-tab[data-source="manual"]');
     if (manualTab) manualTab.click();
   }
 }
 
-// ---------- РЕНДЕРИНГ ----------
+// ---------- РЕНДЕРИНГ (остаётся без изменений, но я приведу полный код) ----------
 const container = $('#pageContainer');
 
 function clearContainer() { container.innerHTML = ''; }
@@ -393,14 +377,13 @@ function renderAnimeDetail(anime) {
           </div>
         </div>
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
-          🎬 Видео загружаются через Gogoanime. Если не работает – вставьте ссылку вручную.
+          🎬 Автоматический поиск через Gogoanime + vidsrc.to. Если не работает – вставьте ссылку вручную.
         </p>
       </div>
     </div>
   `;
   container.innerHTML = html;
 
-  // Обработчик "На главную"
   $('#backToHome')?.addEventListener('click', () => {
     STATE.selectedAnime = null;
     STATE.searchQuery = '';
@@ -415,14 +398,12 @@ function renderAnimeDetail(anime) {
   }
   epContainer.innerHTML = epHtml;
 
-  // Обработчики кликов по сериям
   epContainer.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       const ep = parseInt(btn.dataset.ep);
       STATE.selectedEpisode = ep;
       epContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
       btn.classList.add('active-ep');
-      // Загружаем видео
       const activeTab = document.querySelector('.source-tab.active-tab');
       const source = activeTab ? activeTab.dataset.source : 'auto';
       if (source === 'auto') {
@@ -435,7 +416,6 @@ function renderAnimeDetail(anime) {
     });
   });
 
-  // Обработчики вкладок
   const sourceTabs = document.querySelectorAll('.source-tab');
   const manualControls = document.getElementById('manualControls');
   sourceTabs.forEach(tab => {
@@ -459,7 +439,6 @@ function renderAnimeDetail(anime) {
     });
   });
 
-  // Ручной ввод
   const manualUrlInput = document.getElementById('manualUrlInput');
   const manualUrlApplyBtn = document.getElementById('manualUrlApplyBtn');
   const manualUrlClearBtn = document.getElementById('manualUrlClearBtn');
@@ -473,7 +452,6 @@ function renderAnimeDetail(anime) {
     STATE.manualVideoUrl = url;
     const iframe = $('#playerIframe');
     if (iframe) iframe.src = url;
-    // Переключаем на ручной режим
     const manualTab = document.querySelector('.source-tab[data-source="manual"]');
     if (manualTab && !manualTab.classList.contains('active-tab')) {
       manualTab.click();
@@ -489,13 +467,12 @@ function renderAnimeDetail(anime) {
     if (autoTab) autoTab.click();
   });
 
-  // Если автопоиск – загружаем первую серию
   if (document.querySelector('.source-tab.active-tab')?.dataset.source === 'auto') {
     loadVideo(anime, STATE.selectedEpisode);
   }
 }
 
-// ---------- ПРОФИЛЬ ----------
+// ---------- ПРОФИЛЬ, МОДАЛКИ, НАВИГАЦИЯ (без изменений) ----------
 function renderProfile() {
   if (!STATE.currentUser) { renderHome(); return; }
   clearContainer();
@@ -760,4 +737,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с автопоиском через consumet API');
+console.log('AniList App с плеером vidsrc.to через consumet API');
