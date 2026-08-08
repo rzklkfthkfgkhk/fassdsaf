@@ -25,16 +25,6 @@ const FALLBACK_ANIME = [
   { id: 8, title: { romaji: 'Fullmetal Alchemist: Brotherhood', english: 'Fullmetal Alchemist: Brotherhood' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx5114-SJGVbh0kA7VK.jpg' }, genres: ['Action', 'Adventure'], episodes: 64, status: 'Finished', averageScore: 90 },
   { id: 9, title: { romaji: 'My Hero Academia', english: 'My Hero Academia' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx100317-5NyA2Q3BxpBw.jpg' }, genres: ['Action', 'Superhero'], episodes: 113, status: 'Ongoing', averageScore: 81 },
   { id: 10, title: { romaji: 'Tokyo Ghoul', english: 'Tokyo Ghoul' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx20665-K2sXzBc6HjQH.jpg' }, genres: ['Action', 'Horror'], episodes: 12, status: 'Finished', averageScore: 75 },
-  { id: 11, title: { romaji: 'Sword Art Online', english: 'Sword Art Online' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx11757-RgvFvlp5DgKJ.jpg' }, genres: ['Action', 'Fantasy'], episodes: 25, status: 'Finished', averageScore: 74 },
-  { id: 12, title: { romaji: 'Hunter x Hunter', english: 'Hunter x Hunter' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx11061-G8yS1JEx40lF.jpg' }, genres: ['Action', 'Adventure'], episodes: 148, status: 'Finished', averageScore: 86 },
-  { id: 13, title: { romaji: 'Steins;Gate', english: 'Steins;Gate' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx9253-sg8LQYCpM0q2.jpg' }, genres: ['Sci-Fi', 'Thriller'], episodes: 24, status: 'Finished', averageScore: 88 },
-  { id: 14, title: { romaji: 'Fairy Tail', english: 'Fairy Tail' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx6702-6cZ03IV6wOyn.jpg' }, genres: ['Action', 'Fantasy'], episodes: 328, status: 'Finished', averageScore: 78 },
-  { id: 15, title: { romaji: 'Black Clover', english: 'Black Clover' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx97940-dGh5teYCP5Un.jpg' }, genres: ['Action', 'Fantasy'], episodes: 170, status: 'Finished', averageScore: 77 },
-  { id: 16, title: { romaji: 'Mob Psycho 100', english: 'Mob Psycho 100' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx102150-BoR8bPcyTg47.jpg' }, genres: ['Action', 'Comedy'], episodes: 12, status: 'Finished', averageScore: 84 },
-  { id: 17, title: { romaji: 'One Punch Man', english: 'One Punch Man' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx100374-V7yoHn3cRLzI.jpg' }, genres: ['Action', 'Comedy'], episodes: 12, status: 'Finished', averageScore: 83 },
-  { id: 18, title: { romaji: 'Vinland Saga', english: 'Vinland Saga' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx105854-Hn0hh8LhLM8i.jpg' }, genres: ['Action', 'Drama'], episodes: 24, status: 'Finished', averageScore: 85 },
-  { id: 19, title: { romaji: 'Chainsaw Man', english: 'Chainsaw Man' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx127365-cuNrF3nn02sE.jpg' }, genres: ['Action', 'Fantasy'], episodes: 12, status: 'Finished', averageScore: 84 },
-  { id: 20, title: { romaji: 'Spy x Family', english: 'Spy x Family' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx136993-TsCHFMDgCqdN.jpg' }, genres: ['Comedy', 'Slice of Life'], episodes: 25, status: 'Finished', averageScore: 85 },
 ];
 
 // ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
@@ -185,58 +175,77 @@ function generateJutSuUrls(title, episode) {
   return [
     `https://jut.su/${slug}/season-1/episode-${episode}.html`,
     `https://jut.su/${slug}/episode-${episode}.html`,
-    `https://jut.su/${slug}/season-1/episode-${episode}/`,
-    `https://jut.su/${slug}/episode-${episode}/`
   ];
 }
 
 function generateYammuanimeUrls(title, episode) {
   const slug = transliterate(title).replace(/\s+/g, '-');
-  const domains = ['tv', 'net'];
-  const urls = [];
-  for (const domain of domains) {
-    urls.push(`https://yammuanime.${domain}/anime/${slug}/episode-${episode}`);
-    urls.push(`https://yammuanime.${domain}/anime/${slug}/episode-${episode}/`);
-  }
-  return urls;
+  return [
+    `https://yammuanime.tv/anime/${slug}/episode-${episode}`,
+    `https://yammuanime.net/anime/${slug}/episode-${episode}`,
+  ];
 }
 
 function generateYummyAnimeUrls(title, episode) {
   const slug = transliterate(title).replace(/\s+/g, '-');
-  const domains = ['ru.yummyani.me', 'yummyani.me'];
-  const urls = [];
-  for (const domain of domains) {
-    urls.push(`https://${domain}/catalog/item/${slug}/episode-${episode}`);
-    urls.push(`https://${domain}/catalog/item/${slug}/episode-${episode}/`);
-    urls.push(`https://${domain}/catalog/item/${slug}/season-1/episode-${episode}`);
-  }
-  return urls;
+  return [
+    `https://ru.yummyani.me/catalog/item/${slug}/episode-${episode}`,
+    `https://yummyani.me/catalog/item/${slug}/episode-${episode}`,
+  ];
 }
 
-// Генерация ссылок для CVH
 function generateCvhUrls(title, episode) {
   const slug = transliterate(title).replace(/\s+/g, '-');
-  const domains = ['cvh.tv', 'cvh.xyz', 'cvh.site'];
-  const urls = [];
-  for (const domain of domains) {
-    urls.push(`https://${domain}/anime/${slug}/episode-${episode}`);
-    urls.push(`https://${domain}/anime/${slug}/episode-${episode}/`);
-    urls.push(`https://${domain}/watch/${slug}/episode-${episode}`);
-  }
-  return urls;
+  return [
+    `https://cvh.tv/anime/${slug}/episode-${episode}`,
+    `https://cvh.xyz/anime/${slug}/episode-${episode}`,
+  ];
 }
 
-// Генерация ссылок для AniBoom
 function generateAniboomUrls(title, episode) {
   const slug = transliterate(title).replace(/\s+/g, '-');
-  const domains = ['aniboom.tv', 'aniboom.space', 'aniboom.xyz'];
-  const urls = [];
-  for (const domain of domains) {
-    urls.push(`https://${domain}/anime/${slug}/episode-${episode}`);
-    urls.push(`https://${domain}/anime/${slug}/episode-${episode}/`);
-    urls.push(`https://${domain}/watch/${slug}/episode-${episode}`);
+  return [
+    `https://aniboom.tv/anime/${slug}/episode-${episode}`,
+    `https://aniboom.space/anime/${slug}/episode-${episode}`,
+  ];
+}
+
+// ---------- ANILIBRIA API (НОВЫЙ ИСТОЧНИК) ----------
+const ANILIBRIA_API = 'https://api.anilibria.tv/v2';
+
+async function getAnilibriaTitle(title) {
+  try {
+    // Ищем по названию
+    const searchResp = await fetch(`${ANILIBRIA_API}/getTitle?search=${encodeURIComponent(title)}`);
+    if (!searchResp.ok) return null;
+    const data = await searchResp.json();
+    if (!data || data.length === 0) return null;
+    // Берём первый результат
+    return data[0];
+  } catch (e) {
+    console.warn('AniLibria API error:', e);
+    return null;
   }
-  return urls;
+}
+
+async function getAnilibriaEpisode(title, episode) {
+  try {
+    const titleData = await getAnilibriaTitle(title);
+    if (!titleData) return null;
+    const id = titleData.id;
+    const resp = await fetch(`${ANILIBRIA_API}/getTitle?id=${id}`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data || !data.player || !data.player.playlist) return null;
+    // Ищем нужную серию
+    const playlist = data.player.playlist;
+    const epData = playlist.find(p => p.episode === episode);
+    if (!epData) return null;
+    return epData;
+  } catch (e) {
+    console.warn('AniLibria episode error:', e);
+    return null;
+  }
 }
 
 // ---------- ПОИСК ВИДЕО (YouTube, VK) ----------
@@ -317,6 +326,57 @@ async function loadVideo(anime, episode, source = 'auto') {
     }
   }
 
+  // НОВЫЙ ИСТОЧНИК: AniLibria
+  if (source === 'anilibria') {
+    const epData = await getAnilibriaEpisode(title, episode);
+    if (epData && epData.videos) {
+      // Показываем видео в iframe (используем первый доступный)
+      const videos = epData.videos;
+      const videoSrc = videos.hls || videos.fhd || videos.hd || videos.sd;
+      if (videoSrc) {
+        iframe.src = videoSrc;
+        // Сохраняем данные о качестве и озвучке для отображения в меню
+        const qualityMenu = document.getElementById('qualityMenu');
+        const voiceMenu = document.getElementById('voiceMenu');
+        if (qualityMenu) {
+          qualityMenu.innerHTML = '';
+          const qualities = ['fhd', 'hd', 'sd'];
+          qualities.forEach(q => {
+            if (videos[q]) {
+              const opt = document.createElement('option');
+              opt.value = videos[q];
+              opt.textContent = q.toUpperCase();
+              qualityMenu.appendChild(opt);
+            }
+          });
+          qualityMenu.value = videoSrc;
+          qualityMenu.onchange = () => {
+            iframe.src = qualityMenu.value;
+          };
+        }
+        if (voiceMenu) {
+          voiceMenu.innerHTML = '';
+          // Если есть несколько озвучек, показываем их
+          const voices = epData.voices || ['Студийная Банда'];
+          voices.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            voiceMenu.appendChild(opt);
+          });
+          voiceMenu.onchange = () => {
+            // Здесь можно было бы перезагрузить видео с другой озвучкой, но для простоты просто показываем уведомление
+            alert(`Выбрана озвучка: ${voiceMenu.value}`);
+          };
+        }
+        return;
+      }
+    }
+    alert('Не удалось загрузить видео с AniLibria. Попробуйте другой источник.');
+    return;
+  }
+
+  // Остальные источники (Jut.su, Yammuanime, YummyAnime, CVH, AniBoom)
   if (['jutsu', 'yammuanime', 'yummyanime', 'cvh', 'aniboom'].includes(source)) {
     let urls = [];
     if (source === 'jutsu') {
@@ -330,13 +390,10 @@ async function loadVideo(anime, episode, source = 'auto') {
     } else if (source === 'aniboom') {
       urls = generateAniboomUrls(title, episode);
     }
-    // Показываем первую ссылку в iframe
     iframe.src = urls[0];
-    // Показываем поле для ручной правки и все варианты
     const manualArea = $('#manualLinkArea');
     manualArea.style.display = 'flex';
     $('#manualLinkInput').value = urls[0];
-    // Добавляем кнопки выбора вариантов
     let btnContainer = manualArea.querySelector('.url-variants');
     if (!btnContainer) {
       btnContainer = document.createElement('div');
@@ -355,7 +412,6 @@ async function loadVideo(anime, episode, source = 'auto') {
       };
       btnContainer.appendChild(btn);
     });
-    // Кнопка поиска в Google
     let googleBtn = manualArea.querySelector('.google-search-btn');
     if (!googleBtn) {
       googleBtn = document.createElement('button');
@@ -512,9 +568,24 @@ function renderAnimeDetail(anime) {
   }
   html += `
         </div>
+        <div class="player-controls" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
+          <div class="quality-selector">
+            <label for="qualityMenu">Качество:</label>
+            <select id="qualityMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color);">
+              <option value="">Авто</option>
+            </select>
+          </div>
+          <div class="voice-selector">
+            <label for="voiceMenu">Озвучка:</label>
+            <select id="voiceMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color);">
+              <option value="">Студийная Банда</option>
+            </select>
+          </div>
+        </div>
         <div class="player-tabs">
           <button class="active-tab" data-source="auto">▶ YouTube</button>
           <button data-source="vk">📺 VK</button>
+          <button data-source="anilibria">🎬 AniLibria</button>
           <button data-source="jutsu">🎬 Jut.su</button>
           <button data-source="yammuanime">🎬 Yammuanime</button>
           <button data-source="yummyanime">🎬 YummyAnime</button>
@@ -533,7 +604,7 @@ function renderAnimeDetail(anime) {
         </div>
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
           💡 Для VK нужен сервисный ключ (настройки в профиле). 
-          Ссылки на сайты генерируются автоматически, но могут не работать – исправьте вручную.
+          AniLibria автоматически подбирает качество и озвучку.
         </p>
       </div>
     </div>
@@ -565,6 +636,8 @@ function renderAnimeDetail(anime) {
       btn.classList.add('active-tab');
       const source = btn.dataset.source;
       const manualArea = $('#manualLinkArea');
+      const qualityMenu = document.getElementById('qualityMenu');
+      const voiceMenu = document.getElementById('voiceMenu');
       if (source === 'manual') {
         manualArea.style.display = 'flex';
         const iframe = $('#playerIframe');
@@ -573,8 +646,15 @@ function renderAnimeDetail(anime) {
         if (variants) variants.remove();
         const googleBtn = manualArea.querySelector('.google-search-btn');
         if (googleBtn) googleBtn.remove();
+      } else if (source === 'anilibria') {
+        manualArea.style.display = 'none';
+        if (qualityMenu) qualityMenu.style.display = 'inline-block';
+        if (voiceMenu) voiceMenu.style.display = 'inline-block';
+        loadVideo(anime, STATE.selectedEpisode, source);
       } else {
         manualArea.style.display = 'none';
+        if (qualityMenu) qualityMenu.style.display = 'none';
+        if (voiceMenu) voiceMenu.style.display = 'none';
         const variants = manualArea.querySelector('.url-variants');
         if (variants) variants.remove();
         const googleBtn = manualArea.querySelector('.google-search-btn');
@@ -896,4 +976,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с поддержкой CVH и AniBoom');
+console.log('AniList App с поддержкой AniLibria и выбором качества/озвучки');
