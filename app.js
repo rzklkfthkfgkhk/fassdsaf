@@ -11,6 +11,7 @@ const STATE = {
   avatars: {},
   vkToken: '',
   theme: 'light',
+  anilibriaId: null, // ручной ID тайтла AniLibria
 };
 
 // ---------- FALLBACK СПИСОК АНИМЕ ----------
@@ -40,6 +41,7 @@ function loadState() {
       STATE.avatars = parsed.avatars || {};
       STATE.vkToken = parsed.vkToken || '';
       STATE.theme = parsed.theme || 'light';
+      STATE.anilibriaId = parsed.anilibriaId || null;
       if (parsed.currentUser) STATE.currentUser = parsed.currentUser;
     }
   } catch (e) { console.warn('Ошибка загрузки состояния', e); }
@@ -51,6 +53,7 @@ function saveState() {
       avatars: STATE.avatars,
       vkToken: STATE.vkToken,
       theme: STATE.theme,
+      anilibriaId: STATE.anilibriaId,
       currentUser: STATE.currentUser,
     }));
   } catch (e) { console.warn('Ошибка сохранения состояния', e); }
@@ -210,32 +213,56 @@ function generateAniboomUrls(title, episode) {
   ];
 }
 
-// ---------- ANILIBRIA API (НОВАЯ ВЕРСИЯ) ----------
+// ---------- ANILIBRIA API (НОВАЯ ВЕРСИЯ С УЛУЧШЕННЫМ ПОИСКОМ) ----------
 const ANILIBRIA_API = 'https://api.anilibria.top/v1';
 
-// Поиск тайтла по названию (несколько попыток с разными вариантами)
-async function searchAnilibriaTitle(title) {
-  // Собираем варианты названий
+// Генерация вариантов названий для поиска
+function generateSearchVariants(titleObj) {
   const variants = [];
-  if (title.romaji) variants.push(title.romaji);
-  if (title.english) variants.push(title.english);
-  if (title.native) variants.push(title.native);
-  // Добавляем очищенный romaji (без спецсимволов)
-  if (title.romaji) {
-    const clean = title.romaji.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  if (titleObj.romaji) variants.push(titleObj.romaji);
+  if (titleObj.english) variants.push(titleObj.english);
+  if (titleObj.native) variants.push(titleObj.native);
+  // Очищенные от спецсимволов
+  if (titleObj.romaji) {
+    const clean = titleObj.romaji.replace(/[^a-zA-Z0-9 ]/g, '').trim();
     if (clean && !variants.includes(clean)) variants.push(clean);
   }
+  // Разбиваем на слова и пробуем отдельные значимые слова
+  const words = titleObj.romaji ? titleObj.romaji.split(' ') : [];
+  if (words.length > 1) {
+    // Пробуем первые два слова, последние два, и все вместе
+    const combos = [];
+    if (words.length >= 2) {
+      combos.push(words.slice(0, 2).join(' '));
+      combos.push(words.slice(-2).join(' '));
+    }
+    combos.forEach(c => {
+      if (c && !variants.includes(c)) variants.push(c);
+    });
+  }
   // Убираем дубли
-  const uniqueVariants = [...new Set(variants)];
+  return [...new Set(variants)];
+}
 
-  for (const query of uniqueVariants) {
+// Поиск тайтла по названию (несколько попыток)
+async function searchAnilibriaTitle(titleObj) {
+  const variants = generateSearchVariants(titleObj);
+  console.log('Поиск AniLibria по вариантам:', variants);
+  for (const query of variants) {
+    if (!query) continue;
     try {
       const url = `${ANILIBRIA_API}/searchTitles?search=${encodeURIComponent(query)}&limit=1`;
+      console.log(`Запрос к AniLibria: ${url}`);
       const resp = await fetch(url);
-      if (!resp.ok) continue;
+      if (!resp.ok) {
+        console.warn(`Ответ не OK: ${resp.status} для запроса "${query}"`);
+        continue;
+      }
       const data = await resp.json();
+      console.log(`Результат для "${query}":`, data);
       if (data && data.length > 0) {
-        return data[0]; // возвращаем первый найденный тайтл
+        console.log(`Найден тайтл: ${data[0].id} - ${data[0].title}`);
+        return data[0];
       }
     } catch (e) {
       console.warn(`Ошибка поиска на AniLibria по запросу "${query}":`, e);
@@ -250,7 +277,9 @@ async function getAnilibriaTitleById(id) {
     const url = `${ANILIBRIA_API}/getTitle?id=${id}`;
     const resp = await fetch(url);
     if (!resp.ok) return null;
-    return await resp.json();
+    const data = await resp.json();
+    console.log('Получены данные тайтла:', data);
+    return data;
   } catch (e) {
     console.warn('Ошибка получения тайтла AniLibria:', e);
     return null;
@@ -259,21 +288,50 @@ async function getAnilibriaTitleById(id) {
 
 // Получение данных о конкретной серии
 async function getAnilibriaEpisode(animeTitle, episode) {
-  // Сначала ищем тайтл
-  const titleData = await searchAnilibriaTitle(animeTitle);
-  if (!titleData) return null;
-  // Получаем детали
-  const fullData = await getAnilibriaTitleById(titleData.id);
-  if (!fullData || !fullData.player || !fullData.player.playlist) return null;
-  // Ищем нужную серию в плейлисте
-  const playlist = fullData.player.playlist;
+  // Если есть ручной ID, используем его
+  let titleData = null;
+  if (STATE.anilibriaId) {
+    console.log('Используем ручной ID AniLibria:', STATE.anilibriaId);
+    const fullData = await getAnilibriaTitleById(STATE.anilibriaId);
+    if (fullData) {
+      titleData = fullData;
+    } else {
+      console.warn('Ручной ID не найден, пробуем поиск');
+    }
+  }
+  if (!titleData) {
+    // Ищем по названию
+    const found = await searchAnilibriaTitle(animeTitle);
+    if (!found) {
+      console.warn('Тайтл не найден на AniLibria');
+      return null;
+    }
+    // Получаем детали
+    const fullData = await getAnilibriaTitleById(found.id);
+    if (!fullData) {
+      console.warn('Не удалось получить детали тайтла');
+      return null;
+    }
+    titleData = fullData;
+  }
+  // Проверяем плейлист
+  if (!titleData.player || !titleData.player.playlist) {
+    console.warn('Нет плейлиста у тайтла');
+    return null;
+  }
+  const playlist = titleData.player.playlist;
+  console.log('Плейлист:', playlist);
   const epData = playlist.find(p => p.episode === episode);
-  if (!epData) return null;
-  // Возвращаем данные серии вместе с информацией об озвучках (если есть)
+  if (!epData) {
+    console.warn(`Серия ${episode} не найдена в плейлисте`);
+    return null;
+  }
+  console.log('Найдена серия:', epData);
+  // Возвращаем данные серии
   return {
     videos: epData.videos || {},
-    voices: fullData.voices || ['Студийная Банда'],
-    title: fullData,
+    voices: titleData.voices || ['Студийная Банда'],
+    title: titleData,
   };
 }
 
@@ -356,61 +414,88 @@ async function loadVideo(anime, episode, source = 'auto') {
     }
   }
 
-  // НОВЫЙ ИСТОЧНИК: AniLibria (через актуальное API)
+  // AniLibria – с улучшенной обработкой ошибок и автоматическим переходом на YouTube
   if (source === 'anilibria') {
-    const epData = await getAnilibriaEpisode(titleObj, episode);
-    if (epData && epData.videos) {
-      const videos = epData.videos;
-      // Выбираем приоритет: hls (адаптивный) > fhd > hd > sd
-      const videoSrc = videos.hls || videos.fhd || videos.hd || videos.sd;
-      if (videoSrc) {
-        iframe.src = videoSrc;
-        // Заполняем меню качества
-        const qualityMenu = document.getElementById('qualityMenu');
-        if (qualityMenu) {
-          qualityMenu.innerHTML = '';
-          const qualityMap = {
-            fhd: 'FHD (1080p)',
-            hd: 'HD (720p)',
-            sd: 'SD (480p)',
-            hls: 'Адаптивное (HLS)'
-          };
-          const order = ['hls', 'fhd', 'hd', 'sd'];
-          order.forEach(key => {
-            if (videos[key]) {
-              const opt = document.createElement('option');
-              opt.value = videos[key];
-              opt.textContent = qualityMap[key] || key.toUpperCase();
-              qualityMenu.appendChild(opt);
+    try {
+      const epData = await getAnilibriaEpisode(titleObj, episode);
+      if (epData && epData.videos) {
+        const videos = epData.videos;
+        const videoSrc = videos.hls || videos.fhd || videos.hd || videos.sd;
+        if (videoSrc) {
+          iframe.src = videoSrc;
+          // Заполняем меню качества
+          const qualityMenu = document.getElementById('qualityMenu');
+          if (qualityMenu) {
+            qualityMenu.innerHTML = '';
+            const qualityMap = { fhd: 'FHD (1080p)', hd: 'HD (720p)', sd: 'SD (480p)', hls: 'Адаптивное (HLS)' };
+            const order = ['hls', 'fhd', 'hd', 'sd'];
+            order.forEach(key => {
+              if (videos[key]) {
+                const opt = document.createElement('option');
+                opt.value = videos[key];
+                opt.textContent = qualityMap[key] || key.toUpperCase();
+                qualityMenu.appendChild(opt);
+              }
+            });
+            if (qualityMenu.options.length > 0) {
+              qualityMenu.value = videoSrc;
+              qualityMenu.onchange = () => { iframe.src = qualityMenu.value; };
+              qualityMenu.style.display = 'inline-block';
             }
-          });
-          qualityMenu.value = videoSrc;
-          qualityMenu.onchange = () => {
-            iframe.src = qualityMenu.value;
-          };
-          qualityMenu.style.display = 'inline-block';
+          }
+          const voiceMenu = document.getElementById('voiceMenu');
+          if (voiceMenu) {
+            voiceMenu.innerHTML = '';
+            const voices = epData.voices || ['Студийная Банда'];
+            voices.forEach(v => {
+              const opt = document.createElement('option');
+              opt.value = v;
+              opt.textContent = v;
+              voiceMenu.appendChild(opt);
+            });
+            voiceMenu.onchange = () => {
+              // Здесь можно было бы перезагрузить с другой озвучкой, но для простоты уведомление
+              console.log(`Выбрана озвучка: ${voiceMenu.value}`);
+            };
+            voiceMenu.style.display = 'inline-block';
+          }
+          return; // Успешно загрузили
         }
-        // Заполняем меню озвучки
+      }
+      // Если не удалось найти видео – логируем и переключаемся на YouTube автоматически
+      console.warn('AniLibria не нашла видео для этой серии, переключаем на YouTube');
+      // Показываем уведомление в консоли, но не алерт
+      // Автоматически переключаем вкладку на YouTube
+      const youtubeTab = document.querySelector('.player-tabs button[data-source="auto"]');
+      if (youtubeTab) {
+        // Снимаем активную вкладку
+        document.querySelectorAll('.player-tabs button').forEach(b => b.classList.remove('active-tab'));
+        youtubeTab.classList.add('active-tab');
+        // Прячем меню качества/озвучки
+        const qualityMenu = document.getElementById('qualityMenu');
         const voiceMenu = document.getElementById('voiceMenu');
-        if (voiceMenu) {
-          voiceMenu.innerHTML = '';
-          const voices = epData.voices || ['Студийная Банда'];
-          voices.forEach(v => {
-            const opt = document.createElement('option');
-            opt.value = v;
-            opt.textContent = v;
-            voiceMenu.appendChild(opt);
-          });
-          voiceMenu.onchange = () => {
-            // Здесь можно было бы перезагрузить видео с другой озвучкой, но это требует дополнительного запроса
-            alert(`Выбрана озвучка: ${voiceMenu.value}`);
-          };
-          voiceMenu.style.display = 'inline-block';
-        }
+        if (qualityMenu) qualityMenu.style.display = 'none';
+        if (voiceMenu) voiceMenu.style.display = 'none';
+        // Загружаем видео через YouTube
+        await loadVideo(anime, episode, 'auto');
+        return;
+      }
+    } catch (e) {
+      console.error('Ошибка при загрузке AniLibria:', e);
+      // При ошибке тоже переключаем на YouTube
+      const youtubeTab = document.querySelector('.player-tabs button[data-source="auto"]');
+      if (youtubeTab) {
+        document.querySelectorAll('.player-tabs button').forEach(b => b.classList.remove('active-tab'));
+        youtubeTab.classList.add('active-tab');
+        const qualityMenu = document.getElementById('qualityMenu');
+        const voiceMenu = document.getElementById('voiceMenu');
+        if (qualityMenu) qualityMenu.style.display = 'none';
+        if (voiceMenu) voiceMenu.style.display = 'none';
+        await loadVideo(anime, episode, 'auto');
         return;
       }
     }
-    // Если не удалось загрузить — показываем сообщение и предлагаем другие источники
+    // Если ничего не сработало, показываем сообщение и предлагаем другие источники
     alert('Не удалось загрузить видео с AniLibria. Попробуйте другой источник (YouTube, VK, Jut.su и т.д.)');
     return;
   }
@@ -689,7 +774,7 @@ function renderAnimeDetail(anime) {
         if (voiceMenu) voiceMenu.style.display = 'none';
       } else if (source === 'anilibria') {
         manualArea.style.display = 'none';
-        // Показываем меню качества и озвучки (они заполняются в loadVideo)
+        // Показываем меню качества и озвучки (заполняются в loadVideo)
         if (qualityMenu) qualityMenu.style.display = 'inline-block';
         if (voiceMenu) voiceMenu.style.display = 'inline-block';
         loadVideo(anime, STATE.selectedEpisode, source);
@@ -741,6 +826,7 @@ function renderProfile() {
         <div style="display:flex; gap:0.8rem; flex-wrap:wrap; margin-top:0.5rem;">
           <button id="changeAvatarBtn">📷 Сменить аватар</button>
           <button id="vkSettingsBtn">⚙️ Настройки VK</button>
+          <button id="anilibriaIdBtn">🎬 Настройки AniLibria</button>
         </div>
       </div>
     </div>
@@ -756,6 +842,7 @@ function renderProfile() {
   $('#profileAvatar')?.addEventListener('click', () => openAvatarModal());
   $('#changeAvatarBtn')?.addEventListener('click', () => openAvatarModal());
   $('#vkSettingsBtn')?.addEventListener('click', () => openVKSettingsModal());
+  $('#anilibriaIdBtn')?.addEventListener('click', () => openAnilibriaSettingsModal());
 
   container.querySelectorAll('.profile-tabs button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -918,6 +1005,55 @@ vkTokenSaveBtn?.addEventListener('click', () => {
   setTimeout(() => closeVKSettingsModal(), 1500);
 });
 
+// AniLibria настройки (ручной ID)
+const anilibriaSettingsModal = document.createElement('div');
+anilibriaSettingsModal.id = 'anilibriaSettingsModal';
+anilibriaSettingsModal.className = 'modal';
+anilibriaSettingsModal.style.display = 'none';
+anilibriaSettingsModal.innerHTML = `
+  <div class="modal-content">
+    <span class="close-anilibria">&times;</span>
+    <h2>Настройки AniLibria</h2>
+    <p style="font-size:0.9rem; opacity:0.8; margin-bottom:1rem;">
+      Введите <strong>ID тайтла</strong> с сайта AniLibria (число).<br>
+      <a href="https://anilibria.top/search" target="_blank">Найти ID на AniLibria</a>
+    </p>
+    <input type="number" id="anilibriaIdInput" placeholder="Например, 12345" style="width:100%; padding:0.8rem; border-radius:40px; border:1px solid #d1d9e6;" />
+    <button id="anilibriaIdSaveBtn" style="margin-top:1rem; background:#3b82f6; color:white; width:100%;">Сохранить</button>
+    <div id="anilibriaIdStatus" style="margin-top:0.5rem; font-size:0.9rem;"></div>
+  </div>
+`;
+document.body.appendChild(anilibriaSettingsModal);
+
+const anilibriaModal = document.getElementById('anilibriaSettingsModal');
+const anilibriaIdInput = document.getElementById('anilibriaIdInput');
+const anilibriaIdSaveBtn = document.getElementById('anilibriaIdSaveBtn');
+const anilibriaIdStatus = document.getElementById('anilibriaIdStatus');
+
+function openAnilibriaSettingsModal() {
+  anilibriaModal.style.display = 'flex';
+  anilibriaIdInput.value = STATE.anilibriaId || '';
+  anilibriaIdStatus.textContent = '';
+}
+function closeAnilibriaSettingsModal() { anilibriaModal.style.display = 'none'; }
+
+document.querySelector('.close-anilibria')?.addEventListener('click', closeAnilibriaSettingsModal);
+window.addEventListener('click', (e) => { if (e.target === anilibriaModal) closeAnilibriaSettingsModal(); });
+
+anilibriaIdSaveBtn?.addEventListener('click', () => {
+  const id = parseInt(anilibriaIdInput.value.trim());
+  if (isNaN(id) || id <= 0) {
+    anilibriaIdStatus.textContent = 'Введите корректное число';
+    anilibriaIdStatus.style.color = '#ef4444';
+    return;
+  }
+  STATE.anilibriaId = id;
+  saveState();
+  anilibriaIdStatus.textContent = '✅ ID сохранён!';
+  anilibriaIdStatus.style.color = '#10b981';
+  setTimeout(() => closeAnilibriaSettingsModal(), 1500);
+});
+
 // Тема
 const themeModal = $('#themeModal');
 const themeOptions = document.querySelectorAll('.theme-option');
@@ -1018,4 +1154,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с актуальным AniLibria API');
+console.log('AniList App с актуальным AniLibria API и автоматическим переключением на YouTube');
