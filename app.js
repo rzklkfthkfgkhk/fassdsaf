@@ -2,6 +2,7 @@
 // Глобальное состояние
 const STATE = {
   currentUser: null,
+  authToken: null, // Добавлено для хранения токена
   currentPage: 'home',
   animeList: [],
   selectedAnime: null,
@@ -43,6 +44,7 @@ function loadState() {
       STATE.avatars = parsed.avatars || {};
       STATE.theme = parsed.theme || 'light';
       if (parsed.currentUser) STATE.currentUser = parsed.currentUser;
+      if (parsed.authToken) STATE.authToken = parsed.authToken; // Восстанавливаем токен
     }
   } catch (e) { console.warn('Ошибка загрузки состояния', e); }
 }
@@ -53,6 +55,7 @@ function saveState() {
       avatars: STATE.avatars,
       theme: STATE.theme,
       currentUser: STATE.currentUser,
+      authToken: STATE.authToken, // Сохраняем токен
     }));
   } catch (e) { console.warn('Ошибка сохранения состояния', e); }
 }
@@ -76,7 +79,45 @@ function toggleList(username, animeId, listName) {
   renderCurrentPage();
 }
 
-// ---------- ANILIST API ----------
+// ============================================
+// ⭐ НОВЫЙ БЛОК: АВТОРИЗАЦИЯ НА AniLiberty TOP
+// ============================================
+
+const ANILIBERTY_API = 'https://aniliberty.top/api/v1';
+
+// Функция логина (получение зашифрованного токена)
+async function loginToAniLiberty(login, password) {
+  const url = `${ANILIBERTY_API}/accounts/users/auth/login`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ login, password })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Ошибка сервера: ${response.status}`);
+    }
+
+    const data = await response.json();
+    // API возвращает токен в поле "token"
+    if (data.token) {
+      return data.token; 
+    } else {
+      throw new Error('Токен не получен');
+    }
+  } catch (error) {
+    console.error('Ошибка входа:', error);
+    throw error;
+  }
+}
+
+// ---------- ANILIST API (FALLBACK) ----------
 const ANILIST_API = 'https://graphql.anilist.co';
 
 async function fetchAnimeList(page = 1, perPage = 50, search = '') {
@@ -175,14 +216,12 @@ class UniversalPlayer {
     this.iframeElement = null;
   }
 
-  // Очистка контейнера
   clear() {
     this.container.innerHTML = '';
     this.videoElement = null;
     this.iframeElement = null;
   }
 
-  // Воспроизведение по прямой ссылке
   playDirect(url) {
     this.clear();
     this.currentSource = 'direct';
@@ -200,7 +239,6 @@ class UniversalPlayer {
     video.style.background = '#000';
     video.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
     
-    // Постер по умолчанию
     video.poster = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect width="400" height="300" fill="%231a1a1a"/%3E%3Ctext x="50" y="150" fill="%23666" font-size="20"%3EЗагрузка видео...%3C/text%3E%3C/svg%3E';
     
     this.container.appendChild(video);
@@ -215,7 +253,6 @@ class UniversalPlayer {
     return video;
   }
 
-  // Воспроизведение через YouTube
   playYouTube(query) {
     this.clear();
     this.currentSource = 'youtube';
@@ -237,7 +274,6 @@ class UniversalPlayer {
     return iframe;
   }
 
-  // Воспроизведение через VK
   playVK(videoId) {
     this.clear();
     this.currentSource = 'vk';
@@ -251,7 +287,6 @@ class UniversalPlayer {
       return null;
     }
     
-    // Создаем контейнер для виджета VK
     const vkContainer = document.createElement('div');
     vkContainer.id = 'vk_player_widget';
     vkContainer.style.width = '100%';
@@ -260,7 +295,6 @@ class UniversalPlayer {
     vkContainer.style.overflow = 'hidden';
     this.container.appendChild(vkContainer);
     
-    // Функция загрузки виджета
     const loadVKWidget = () => {
       if (window.VK && VK.Widgets) {
         try {
@@ -280,7 +314,6 @@ class UniversalPlayer {
           `;
         }
       } else {
-        // Загружаем VK API
         const script = document.createElement('script');
         script.src = 'https://vk.com/js/api/vk_api.js?169';
         script.onload = () => {
@@ -314,13 +347,11 @@ class UniversalPlayer {
       }
     };
     
-    // Небольшая задержка для рендеринга
     setTimeout(loadVKWidget, 100);
     
     return vkContainer;
   }
 
-  // Воспроизведение через встроенный HTML5 плеер с поддержкой разных форматов
   playHTML5(url, type = 'video/mp4') {
     this.clear();
     this.currentSource = 'html5';
@@ -343,9 +374,6 @@ class UniversalPlayer {
     source.type = type;
     video.appendChild(source);
     
-    // Добавляем поддержку субтитров (опционально)
-    video.textTracks;
-    
     this.container.appendChild(video);
     this.videoElement = video;
     
@@ -355,7 +383,6 @@ class UniversalPlayer {
     return video;
   }
 
-  // Загрузка видео с прогрессом
   playWithProgress(url) {
     this.clear();
     this.currentSource = 'direct';
@@ -378,7 +405,6 @@ class UniversalPlayer {
     video.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
     video.preload = 'metadata';
     
-    // Индикатор загрузки
     const progressBar = document.createElement('div');
     progressBar.style.cssText = `
       position: absolute;
@@ -407,7 +433,6 @@ class UniversalPlayer {
     this.container.appendChild(wrapper);
     this.videoElement = video;
     
-    // Отслеживаем загрузку
     video.addEventListener('progress', () => {
       if (video.buffered.length > 0) {
         const buffered = video.buffered.end(video.buffered.length - 1);
@@ -607,17 +632,14 @@ function renderAnimeDetail(anime) {
   `;
   container.innerHTML = html;
 
-  // Инициализируем плеер
   player = new UniversalPlayer('playerContainer');
 
-  // Обработчик "На главную"
   $('#backToHome')?.addEventListener('click', () => {
     STATE.selectedAnime = null;
     STATE.searchQuery = '';
     renderHome();
   });
 
-  // Генерируем кнопки серий
   const epContainer = document.getElementById('episodeListContainer');
   let epHtml = '';
   for (let i = 1; i <= totalEpisodes; i++) {
@@ -625,7 +647,6 @@ function renderAnimeDetail(anime) {
   }
   epContainer.innerHTML = epHtml;
 
-  // Обработчик выбора серии
   epContainer.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       const ep = parseInt(btn.dataset.ep);
@@ -633,12 +654,10 @@ function renderAnimeDetail(anime) {
       epContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
       btn.classList.add('active-ep');
       
-      // Автоматически обновляем плеер с ссылкой на серию
       const directInput = document.getElementById('directUrlInput');
       if (directInput && directInput.value) {
         const url = directInput.value;
         if (url) {
-          // Пытаемся подставить серию в ссылку
           const epUrl = url.replace(/\d+\.mp4$/, `${ep}.mp4`);
           if (epUrl !== url) {
             directInput.value = epUrl;
@@ -649,7 +668,6 @@ function renderAnimeDetail(anime) {
     });
   });
 
-  // Управление источниками
   const sourceBtns = document.querySelectorAll('.source-btn');
   const directControl = document.getElementById('directControl');
   const youtubeControl = document.getElementById('youtubeControl');
@@ -673,11 +691,9 @@ function renderAnimeDetail(anime) {
     });
   });
   
-  // По умолчанию активируем direct
   const defaultBtn = document.querySelector('.source-btn[data-source="direct"]');
   if (defaultBtn) defaultBtn.click();
 
-  // Прямая ссылка
   document.getElementById('directPlayBtn')?.addEventListener('click', () => {
     const url = document.getElementById('directUrlInput').value.trim();
     if (!url) {
@@ -688,7 +704,6 @@ function renderAnimeDetail(anime) {
     localStorage.setItem('lastVideoUrl', url);
   });
 
-  // YouTube
   document.getElementById('youtubePlayBtn')?.addEventListener('click', () => {
     const query = document.getElementById('youtubeQueryInput').value.trim();
     if (!query) {
@@ -698,7 +713,6 @@ function renderAnimeDetail(anime) {
     player.playYouTube(query);
   });
 
-  // VK
   document.getElementById('vkPlayBtn')?.addEventListener('click', () => {
     const videoId = document.getElementById('vkVideoIdInput').value.trim();
     if (!videoId) {
@@ -708,7 +722,6 @@ function renderAnimeDetail(anime) {
     player.playVK(videoId);
   });
 
-  // HTML5
   document.getElementById('html5PlayBtn')?.addEventListener('click', () => {
     const url = document.getElementById('html5UrlInput').value.trim();
     const type = document.getElementById('html5TypeSelect').value;
@@ -719,12 +732,10 @@ function renderAnimeDetail(anime) {
     player.playHTML5(url, type);
   });
 
-  // Восстанавливаем последнее видео
   const savedUrl = localStorage.getItem('lastVideoUrl');
   if (savedUrl) {
     const input = document.getElementById('directUrlInput');
     if (input) input.value = savedUrl;
-    // Не автозагружаем, чтобы не мешать
   }
 }
 
@@ -834,31 +845,43 @@ function updateAuthForm() {
   }
 }
 
-authForm.addEventListener('submit', (e) => {
+// ============================================
+// ⭐ ОБНОВЛЕННЫЙ ОБРАБОТЧИК АВТОРИЗАЦИИ
+// ============================================
+authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const username = $('#authUsername').value.trim();
   const password = $('#authPassword').value.trim();
-  if (!username || !password) { alert('Заполните все поля'); return; }
+  
+  if (!username || !password) { 
+    alert('Заполните все поля'); 
+    return; 
+  }
 
-  if (isLoginMode) {
-    const stored = localStorage.getItem(`user_${username}`);
-    if (!stored) { alert('Пользователь не найден'); return; }
-    const user = JSON.parse(stored);
-    if (user.password !== password) { alert('Неверный пароль'); return; }
-    STATE.currentUser = { username, password };
-    saveState();
-    closeAuthModal();
-    updateUI();
-    renderCurrentPage();
-  } else {
-    if (localStorage.getItem(`user_${username}`)) { alert('Пользователь уже существует'); return; }
-    localStorage.setItem(`user_${username}`, JSON.stringify({ username, password }));
-    STATE.currentUser = { username, password };
+  const submitBtn = $('#authSubmitBtn');
+  const originalText = submitBtn.textContent;
+  submitBtn.textContent = 'Загрузка...';
+  submitBtn.disabled = true;
+
+  try {
+    // Вход в реальное API AniLiberty
+    const token = await loginToAniLiberty(username, password);
+    
+    STATE.currentUser = { username: username, token: token };
+    STATE.authToken = token;
+
     getUserLists(username);
     saveState();
+
     closeAuthModal();
     updateUI();
     renderCurrentPage();
+    
+  } catch (error) {
+    alert(`Ошибка авторизации: ${error.message}`);
+  } finally {
+    submitBtn.textContent = originalText;
+    submitBtn.disabled = false;
   }
 });
 
@@ -947,8 +970,13 @@ $('#profileLink')?.addEventListener('click', (e) => {
 });
 
 $('#loginBtn')?.addEventListener('click', openAuthModal);
+
+// ============================================
+// ⭐ ОБНОВЛЕННЫЙ ВЫХОД
+// ============================================
 $('#logoutBtn')?.addEventListener('click', () => {
   STATE.currentUser = null;
+  STATE.authToken = null;
   saveState();
   STATE.currentPage = 'home';
   STATE.selectedAnime = null;
@@ -993,4 +1021,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с универсальным плеером (прямые ссылки, YouTube, VK, HTML5)');
+console.log('AniList App с авторизацией через AniLiberty API');
