@@ -215,12 +215,10 @@ const ANILIBRIA_API = 'https://api.anilibria.tv/v2';
 
 async function getAnilibriaTitle(title) {
   try {
-    // Ищем по названию
     const searchResp = await fetch(`${ANILIBRIA_API}/getTitle?search=${encodeURIComponent(title)}`);
     if (!searchResp.ok) return null;
     const data = await searchResp.json();
     if (!data || data.length === 0) return null;
-    // Берём первый результат
     return data[0];
   } catch (e) {
     console.warn('AniLibria API error:', e);
@@ -237,7 +235,6 @@ async function getAnilibriaEpisode(title, episode) {
     if (!resp.ok) return null;
     const data = await resp.json();
     if (!data || !data.player || !data.player.playlist) return null;
-    // Ищем нужную серию
     const playlist = data.player.playlist;
     const epData = playlist.find(p => p.episode === episode);
     if (!epData) return null;
@@ -330,14 +327,12 @@ async function loadVideo(anime, episode, source = 'auto') {
   if (source === 'anilibria') {
     const epData = await getAnilibriaEpisode(title, episode);
     if (epData && epData.videos) {
-      // Показываем видео в iframe (используем первый доступный)
       const videos = epData.videos;
       const videoSrc = videos.hls || videos.fhd || videos.hd || videos.sd;
       if (videoSrc) {
         iframe.src = videoSrc;
-        // Сохраняем данные о качестве и озвучке для отображения в меню
+        // Заполняем меню качества
         const qualityMenu = document.getElementById('qualityMenu');
-        const voiceMenu = document.getElementById('voiceMenu');
         if (qualityMenu) {
           qualityMenu.innerHTML = '';
           const qualities = ['fhd', 'hd', 'sd'];
@@ -354,9 +349,10 @@ async function loadVideo(anime, episode, source = 'auto') {
             iframe.src = qualityMenu.value;
           };
         }
+        // Заполняем меню озвучки (если есть данные)
+        const voiceMenu = document.getElementById('voiceMenu');
         if (voiceMenu) {
           voiceMenu.innerHTML = '';
-          // Если есть несколько озвучек, показываем их
           const voices = epData.voices || ['Студийная Банда'];
           voices.forEach(v => {
             const opt = document.createElement('option');
@@ -365,8 +361,8 @@ async function loadVideo(anime, episode, source = 'auto') {
             voiceMenu.appendChild(opt);
           });
           voiceMenu.onchange = () => {
-            // Здесь можно было бы перезагрузить видео с другой озвучкой, но для простоты просто показываем уведомление
             alert(`Выбрана озвучка: ${voiceMenu.value}`);
+            // Здесь можно было бы перезагрузить видео с другой озвучкой, но для простоты просто уведомление
           };
         }
         return;
@@ -646,6 +642,9 @@ function renderAnimeDetail(anime) {
         if (variants) variants.remove();
         const googleBtn = manualArea.querySelector('.google-search-btn');
         if (googleBtn) googleBtn.remove();
+        // Скрываем меню качества/озвучки
+        if (qualityMenu) qualityMenu.style.display = 'none';
+        if (voiceMenu) voiceMenu.style.display = 'none';
       } else if (source === 'anilibria') {
         manualArea.style.display = 'none';
         if (qualityMenu) qualityMenu.style.display = 'inline-block';
