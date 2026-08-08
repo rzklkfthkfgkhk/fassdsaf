@@ -3,13 +3,1300 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnimeList</title>
-    <!-- Подключаем стили -->
-    <link rel="stylesheet" href="styles.css">
+    <title>AnimeList - каталог аниме</title>
+    <style>
+        /* ===== БАЗОВЫЕ СТИЛИ ===== */
+        :root {
+            --bg: #0d0d0d;
+            --bg-card: #1a1a1a;
+            --bg-input: #2a2a2a;
+            --text: #f0f0f0;
+            --text-secondary: #aaa;
+            --accent: #ff6b6b;
+            --accent-hover: #ff5252;
+            --accent-glow: rgba(255, 107, 107, 0.3);
+            --border: #333;
+            --shadow: 0 8px 32px rgba(0,0,0,0.6);
+            --radius: 16px;
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        body.light {
+            --bg: #f0f0f0;
+            --bg-card: #ffffff;
+            --bg-input: #e8e8e8;
+            --text: #1a1a1a;
+            --text-secondary: #555;
+            --border: #ddd;
+            --shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        #app {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* ===== ШАПКА ===== */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 16px 24px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+            position: sticky;
+            top: 10px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .logo {
+            font-size: 26px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent), #ff8a8a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            cursor: pointer;
+            letter-spacing: 0.5px;
+            user-select: none;
+        }
+
+        .logo span {
+            -webkit-text-fill-color: var(--text);
+            font-weight: 300;
+        }
+
+        .nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .nav button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 18px;
+            border-radius: 30px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        .nav button:hover {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+            transform: scale(1.05);
+        }
+
+        .nav .active-btn {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .avatar-small {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--accent);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .avatar-small:hover {
+            transform: scale(1.1);
+            border-color: var(--accent-hover);
+        }
+
+        .theme-toggle {
+            background: transparent;
+            border: none;
+            font-size: 22px;
+            cursor: pointer;
+            color: var(--text);
+            padding: 4px 8px;
+            transition: var(--transition);
+        }
+
+        .theme-toggle:hover {
+            transform: rotate(30deg);
+        }
+
+        .user-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-input);
+            padding: 4px 14px 4px 10px;
+            border-radius: 30px;
+            border: 1px solid var(--border);
+        }
+
+        .user-badge span {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        /* ===== АВТОРИЗАЦИЯ ===== */
+        .auth-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 70vh;
+            padding: 20px;
+        }
+
+        .auth-box {
+            background: var(--bg-card);
+            padding: 50px 45px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            width: 100%;
+            max-width: 440px;
+            border: 1px solid var(--border);
+            transition: var(--transition);
+        }
+
+        .auth-box:hover {
+            border-color: var(--accent);
+        }
+
+        .auth-box h2 {
+            margin-bottom: 8px;
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .auth-box .subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+            font-size: 14px;
+        }
+
+        .auth-box .form-group {
+            margin-bottom: 18px;
+        }
+
+        .auth-box label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .auth-box input {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--bg-input);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 16px;
+            transition: var(--transition);
+            font-family: var(--font);
+        }
+
+        .auth-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .auth-box .btn-primary {
+            width: 100%;
+            padding: 14px;
+            background: var(--accent);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-weight: 700;
+            font-size: 17px;
+            cursor: pointer;
+            transition: var(--transition);
+            margin-top: 8px;
+        }
+
+        .auth-box .btn-primary:hover {
+            background: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--accent-glow);
+        }
+
+        .auth-box .btn-secondary {
+            width: 100%;
+            padding: 12px;
+            background: transparent;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: var(--transition);
+            margin-top: 10px;
+        }
+
+        .auth-box .btn-secondary:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .auth-box .switch-link {
+            margin-top: 20px;
+            text-align: center;
+            cursor: pointer;
+            color: var(--accent);
+            font-weight: 600;
+            transition: var(--transition);
+        }
+
+        .auth-box .switch-link:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+
+        .auth-box .error-msg {
+            color: #ff4444;
+            font-size: 14px;
+            text-align: center;
+            margin-top: 10px;
+            min-height: 24px;
+        }
+
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin: 20px 0;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .auth-divider::before,
+        .auth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* ===== ГЛАВНАЯ ===== */
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .page-subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            font-size: 16px;
+        }
+
+        .anime-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 28px;
+            margin-top: 10px;
+        }
+
+        .anime-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            transition: transform 0.25s, box-shadow 0.25s;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .anime-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+            border-color: var(--accent);
+        }
+
+        .anime-card .card-image {
+            position: relative;
+            overflow: hidden;
+            height: 300px;
+        }
+
+        .anime-card .card-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s;
+        }
+
+        .anime-card:hover .card-image img {
+            transform: scale(1.05);
+        }
+
+        .anime-card .card-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            backdrop-filter: blur(4px);
+            border: 1px solid var(--border);
+        }
+
+        .anime-card .info {
+            padding: 14px 16px 16px;
+        }
+
+        .anime-card .info h3 {
+            font-size: 16px;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .anime-card .info .episodes-info {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .anime-card .actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .anime-card .actions button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: var(--transition);
+            flex: 1;
+            min-width: 40px;
+            font-weight: 600;
+        }
+
+        .anime-card .actions button:hover {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .anime-card .actions button.active-action {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .anime-card .actions .play-btn {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+            flex: 0.8;
+        }
+
+        .anime-card .actions .play-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        /* ===== ПРОФИЛЬ ===== */
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 35px;
+            background: var(--bg-card);
+            padding: 35px 40px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .profile-avatar-wrapper {
+            position: relative;
+        }
+
+        .profile-avatar {
+            width: 130px;
+            height: 130px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 4px solid var(--accent);
+            transition: var(--transition);
+        }
+
+        .profile-avatar:hover {
+            transform: scale(1.02);
+            border-color: var(--accent-hover);
+        }
+
+        .profile-info h2 {
+            font-size: 30px;
+            font-weight: 700;
+        }
+
+        .profile-info .username {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+
+        .profile-stats {
+            display: flex;
+            gap: 35px;
+            margin-top: 10px;
+        }
+
+        .profile-stats .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .profile-stats .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .profile-stats .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .profile-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .profile-actions button {
+            padding: 8px 20px;
+            border-radius: 30px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+            transition: var(--transition);
+            font-weight: 600;
+        }
+
+        .profile-actions button:hover {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .section-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 30px 0 16px;
+            border-left: 4px solid var(--accent);
+            padding-left: 14px;
+        }
+
+        .list-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .list-tag {
+            background: var(--bg-card);
+            padding: 8px 18px;
+            border-radius: 30px;
+            border: 1px solid var(--border);
+            font-size: 14px;
+            transition: var(--transition);
+        }
+
+        .list-tag:hover {
+            border-color: var(--accent);
+        }
+
+        .empty-state {
+            color: var(--text-secondary);
+            font-style: italic;
+            padding: 12px 0;
+        }
+
+        /* ===== ПЛЕЕР ===== */
+        .player-container {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 24px;
+            border: 1px solid var(--border);
+            margin-top: 10px;
+        }
+
+        .player-wrapper {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            overflow: hidden;
+            border-radius: 12px;
+            background: #000;
+        }
+
+        .player-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .player-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 18px;
+            flex-wrap: wrap;
+        }
+
+        .player-controls select {
+            padding: 8px 18px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            color: var(--text);
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .player-controls select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .episode-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 14px 0;
+        }
+
+        .episode-btn {
+            padding: 6px 18px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            color: var(--text);
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .episode-btn:hover {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .episode-btn.active-ep {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .player-back {
+            padding: 8px 24px;
+            background: var(--accent);
+            border: none;
+            border-radius: 30px;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 14px;
+        }
+
+        .player-back:hover {
+            background: var(--accent-hover);
+            transform: scale(1.05);
+        }
+
+        /* ===== ЗАГРУЗКА ===== */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 300px;
+            font-size: 18px;
+            color: var(--text-secondary);
+        }
+
+        .loading::after {
+            content: '';
+            width: 30px;
+            height: 30px;
+            margin-left: 12px;
+            border: 3px solid var(--border);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ===== АДАПТИВ ===== */
+        @media (max-width: 768px) {
+            #app { padding: 12px; }
+            .header { flex-direction: column; align-items: stretch; padding: 14px 18px; }
+            .nav { justify-content: center; }
+            .auth-box { padding: 30px 20px; }
+            .profile-header { flex-direction: column; align-items: center; text-align: center; padding: 24px; }
+            .profile-stats { justify-content: center; }
+            .anime-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+            .anime-card .card-image { height: 220px; }
+        }
+
+        @media (max-width: 480px) {
+            .anime-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+            .anime-card .card-image { height: 180px; }
+            .nav button { font-size: 12px; padding: 6px 12px; }
+        }
+    </style>
 </head>
 <body>
     <div id="app"></div>
-    <!-- Подключаем приложение -->
-    <script src="app.js"></script>
+
+    <script>
+        // ============================================================
+        //  STATE
+        // ============================================================
+        const state = {
+            currentUser: null,
+            users: [],
+            animeList: [],
+            currentView: 'home',
+            selectedAnime: null,
+            currentEpisode: 1,
+            episodes: [],
+            theme: 'dark',
+            authMode: 'login', // 'login' | 'register'
+            authError: '',
+        };
+
+        // ============================================================
+        //  STORAGE
+        // ============================================================
+        function saveUsers() {
+            localStorage.setItem('anime_users', JSON.stringify(state.users));
+        }
+
+        function loadUsers() {
+            const data = localStorage.getItem('anime_users');
+            if (data) {
+                state.users = JSON.parse(data);
+                const session = localStorage.getItem('anime_session');
+                if (session) {
+                    const found = state.users.find(u => u.username === session);
+                    if (found) state.currentUser = found;
+                }
+            }
+        }
+
+        function saveSession() {
+            if (state.currentUser) {
+                localStorage.setItem('anime_session', state.currentUser.username);
+            } else {
+                localStorage.removeItem('anime_session');
+            }
+        }
+
+        // ============================================================
+        //  AUTH
+        // ============================================================
+        function register(username, password) {
+            if (state.users.find(u => u.username === username)) return false;
+            const newUser = {
+                username,
+                password,
+                favorites: [],
+                watched: [],
+                dropped: [],
+                avatar: 'default'
+            };
+            state.users.push(newUser);
+            saveUsers();
+            return true;
+        }
+
+        function login(username, password) {
+            const user = state.users.find(u => u.username === username && u.password === password);
+            if (user) {
+                state.currentUser = user;
+                saveSession();
+                return true;
+            }
+            return false;
+        }
+
+        function logout() {
+            state.currentUser = null;
+            localStorage.removeItem('anime_session');
+            state.currentView = 'home';
+            render();
+        }
+
+        // ============================================================
+        //  ANILIST API
+        // ============================================================
+        async function fetchAnimeList() {
+            const query = `
+            query {
+              Page(page: 1, perPage: 50) {
+                media(type: ANIME, sort: POPULARITY_DESC) {
+                  id
+                  title { romaji }
+                  coverImage { large }
+                  episodes
+                  description
+                }
+              }
+            }
+            `;
+            try {
+                const res = await fetch('https://graphql.anilist.co', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+                state.animeList = data.data.Page.media;
+                render();
+            } catch (e) {
+                console.error('AniList error', e);
+                state.animeList = [];
+                render();
+            }
+        }
+
+        // ============================================================
+        //  PLAYER
+        // ============================================================
+        function getEpisodes(animeId) {
+            const anime = state.animeList.find(a => a.id == animeId);
+            const total = anime?.episodes || 12;
+            return Array.from({ length: Math.min(total, 30) }, (_, i) => i + 1);
+        }
+
+        function getPlayerUrl(animeId, episode) {
+            // Используем публичный embed-плеер
+            return `https://animeembed.cc/embed/?id=${animeId}&ep=${episode}`;
+        }
+
+        // ============================================================
+        //  RENDER
+        // ============================================================
+        let app = document.getElementById('app');
+
+        function render() {
+            if (!app) return;
+            const view = state.currentView;
+
+            if (view === 'profile' && !state.currentUser) {
+                state.currentView = 'auth';
+                return render();
+            }
+
+            let html = '';
+            html += renderHeader();
+
+            if (view === 'home') html += renderHome();
+            else if (view === 'auth') html += renderAuth();
+            else if (view === 'profile') html += renderProfile();
+            else if (view === 'player') html += renderPlayer();
+
+            app.innerHTML = html;
+            attachEvents();
+        }
+
+        // ---------- HEADER ----------
+        function renderHeader() {
+            const user = state.currentUser;
+            const themeIcon = state.theme === 'dark' ? '🌙' : '☀️';
+
+            let navButtons = `
+                <button data-action="home" class="${state.currentView === 'home' ? 'active-btn' : ''}">🏠 Главная</button>
+            `;
+
+            if (user) {
+                navButtons += `
+                    <button data-action="profile" class="${state.currentView === 'profile' ? 'active-btn' : ''}">👤 Профиль</button>
+                    <div class="user-badge">
+                        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=ff6b6b&color=fff&size=32" class="avatar-small" data-action="profile" alt="avatar">
+                        <span>${user.username}</span>
+                    </div>
+                    <button data-action="logout">🚪 Выйти</button>
+                `;
+            } else {
+                navButtons += `
+                    <button data-action="auth" class="${state.currentView === 'auth' ? 'active-btn' : ''}">🔑 Войти</button>
+                `;
+            }
+
+            navButtons += `
+                <button class="theme-toggle" data-action="theme">${themeIcon}</button>
+            `;
+
+            return `
+            <div class="header">
+                <div class="logo" data-action="home">🎬 Anime<span>List</span></div>
+                <div class="nav">${navButtons}</div>
+            </div>
+            `;
+        }
+
+        // ---------- HOME ----------
+        function renderHome() {
+            if (state.animeList.length === 0) {
+                return `<div class="loading">Загрузка аниме</div>`;
+            }
+
+            const cards = state.animeList.map(anime => {
+                const isFav = state.currentUser?.favorites?.includes(anime.id) || false;
+                const isWatched = state.currentUser?.watched?.includes(anime.id) || false;
+                const isDropped = state.currentUser?.dropped?.includes(anime.id) || false;
+
+                return `
+                <div class="anime-card" data-id="${anime.id}">
+                    <div class="card-image">
+                        <img src="${anime.coverImage.large}" alt="${anime.title.romaji}" loading="lazy">
+                        <span class="card-badge">${anime.episodes || '?'} серий</span>
+                    </div>
+                    <div class="info">
+                        <h3>${anime.title.romaji}</h3>
+                        <div class="episodes-info">${anime.episodes || 'Неизвестно'} эп.</div>
+                        <div class="actions">
+                            <button class="${isFav ? 'active-action' : ''}" data-action="fav" data-id="${anime.id}">❤️</button>
+                            <button class="${isWatched ? 'active-action' : ''}" data-action="watch" data-id="${anime.id}">✅</button>
+                            <button class="${isDropped ? 'active-action' : ''}" data-action="drop" data-id="${anime.id}">⛔</button>
+                            <button class="play-btn" data-action="play" data-id="${anime.id}">▶️</button>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            return `
+            <div class="page-title">🔥 Популярное аниме</div>
+            <div class="page-subtitle">Отмечай просмотренное, добавляй в избранное и смотри онлайн</div>
+            <div class="anime-grid">${cards}</div>
+            `;
+        }
+
+        // ---------- AUTH ----------
+        function renderAuth() {
+            const isLogin = state.authMode === 'login';
+            const title = isLogin ? 'Добро пожаловать!' : 'Создай аккаунт';
+            const subtitle = isLogin ? 'Войдите, чтобы сохранять прогресс' : 'Присоединяйся к сообществу аниме';
+            const btnText = isLogin ? 'Войти' : 'Зарегистрироваться';
+            const switchText = isLogin ? 'Нет аккаунта? Создать' : 'Уже есть аккаунт? Войти';
+            const error = state.authError;
+
+            return `
+            <div class="auth-container">
+                <div class="auth-box">
+                    <h2>${title}</h2>
+                    <p class="subtitle">${subtitle}</p>
+
+                    <div class="form-group">
+                        <label for="auth-username">👤 Имя пользователя</label>
+                        <input type="text" id="auth-username" placeholder="Введите имя" autocomplete="username">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="auth-password">🔒 Пароль</label>
+                        <input type="password" id="auth-password" placeholder="Введите пароль" autocomplete="current-password">
+                    </div>
+
+                    ${!isLogin ? `
+                    <div class="form-group">
+                        <label for="auth-password2">🔒 Подтвердите пароль</label>
+                        <input type="password" id="auth-password2" placeholder="Повторите пароль" autocomplete="new-password">
+                    </div>
+                    ` : ''}
+
+                    <button class="btn-primary" id="auth-submit">${btnText}</button>
+
+                    <div class="error-msg" id="auth-error">${error}</div>
+
+                    <div class="auth-divider">или</div>
+
+                    <button class="btn-secondary" id="auth-switch">${switchText}</button>
+                </div>
+            </div>
+            `;
+        }
+
+        // ---------- PROFILE ----------
+        function renderProfile() {
+            const user = state.currentUser;
+            if (!user) return '<div>Ошибка доступа</div>';
+
+            const favList = state.animeList.filter(a => user.favorites.includes(a.id));
+            const watchList = state.animeList.filter(a => user.watched.includes(a.id));
+            const dropList = state.animeList.filter(a => user.dropped.includes(a.id));
+
+            const renderTags = (list) => {
+                if (list.length === 0) return `<span class="empty-state">Список пуст</span>`;
+                return list.map(a => `<span class="list-tag">${a.title.romaji}</span>`).join('');
+            };
+
+            return `
+            <div class="profile-header">
+                <div class="profile-avatar-wrapper">
+                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=ff6b6b&color=fff&size=130" class="profile-avatar" alt="avatar">
+                </div>
+                <div class="profile-info">
+                    <h2>${user.username}</h2>
+                    <div class="username">@${user.username}</div>
+                    <div class="profile-stats">
+                        <div class="stat-item">
+                            <span class="stat-value">${user.favorites.length}</span>
+                            <span class="stat-label">❤️ Избранное</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value">${user.watched.length}</span>
+                            <span class="stat-label">✅ Просмотрено</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value">${user.dropped.length}</span>
+                            <span class="stat-label">⛔ Брошено</span>
+                        </div>
+                    </div>
+                    <div class="profile-actions">
+                        <button data-action="change-avatar">🖼️ Сменить аватар</button>
+                        <button data-action="home">🏠 На главную</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-title">❤️ Избранное</div>
+            <div class="list-tags">${renderTags(favList)}</div>
+
+            <div class="section-title">✅ Просмотренное</div>
+            <div class="list-tags">${renderTags(watchList)}</div>
+
+            <div class="section-title">⛔ Брошено</div>
+            <div class="list-tags">${renderTags(dropList)}</div>
+            `;
+        }
+
+        // ---------- PLAYER ----------
+        function renderPlayer() {
+            const anime = state.selectedAnime;
+            if (!anime) return '<div>Аниме не выбрано</div>';
+
+            const episodes = state.episodes.length ? state.episodes : getEpisodes(anime.id);
+            state.episodes = episodes;
+
+            const epButtons = episodes.map(ep =>
+                `<button class="episode-btn ${ep === state.currentEpisode ? 'active-ep' : ''}" data-ep="${ep}">${ep}</button>`
+            ).join('');
+
+            const playerSrc = getPlayerUrl(anime.id, state.currentEpisode || 1);
+
+            return `
+            <div>
+                <h2 style="margin-bottom:8px;font-size:26px;">${anime.title.romaji}</h2>
+                <div style="color:var(--text-secondary);margin-bottom:16px;">Серия ${state.currentEpisode} из ${episodes.length}</div>
+
+                <div class="player-container">
+                    <div class="player-wrapper">
+                        <iframe src="${playerSrc}" allowfullscreen></iframe>
+                    </div>
+
+                    <div class="episode-list">${epButtons}</div>
+
+                    <div class="player-controls">
+                        <select id="quality-select">
+                            <option value="auto">📺 Авто</option>
+                            <option value="1080">1080p</option>
+                            <option value="720">720p</option>
+                            <option value="480">480p</option>
+                        </select>
+                        <button class="player-back" data-action="back-home">← Назад</button>
+                    </div>
+                </div>
+            </div>
+            `;
+        }
+
+        // ============================================================
+        //  EVENTS
+        // ============================================================
+        function attachEvents() {
+            // ----- Навигация -----
+            document.querySelectorAll('[data-action="home"]').forEach(el => {
+                el.addEventListener('click', () => {
+                    state.currentView = 'home';
+                    render();
+                });
+            });
+
+            document.querySelectorAll('[data-action="auth"]').forEach(el => {
+                el.addEventListener('click', () => {
+                    state.currentView = 'auth';
+                    state.authMode = 'login';
+                    state.authError = '';
+                    render();
+                });
+            });
+
+            document.querySelectorAll('[data-action="profile"]').forEach(el => {
+                if (state.currentUser) {
+                    state.currentView = 'profile';
+                    render();
+                }
+            });
+
+            document.querySelectorAll('[data-action="logout"]').forEach(el => {
+                el.addEventListener('click', logout);
+            });
+
+            document.querySelectorAll('[data-action="back-home"]').forEach(el => {
+                el.addEventListener('click', () => {
+                    state.currentView = 'home';
+                    render();
+                });
+            });
+
+            // ----- Тема -----
+            document.querySelectorAll('[data-action="theme"]').forEach(el => {
+                el.addEventListener('click', () => {
+                    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+                    document.body.className = state.theme === 'dark' ? '' : 'light';
+                    render();
+                });
+            });
+
+            // ----- Аниме карточки -----
+            document.querySelectorAll('.anime-card .actions button').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const action = btn.dataset.action;
+                    const id = parseInt(btn.dataset.id);
+
+                    if (!state.currentUser) {
+                        state.authError = 'Войдите в аккаунт, чтобы сохранять прогресс';
+                        state.currentView = 'auth';
+                        state.authMode = 'login';
+                        render();
+                        return;
+                    }
+
+                    const user = state.currentUser;
+
+                    if (action === 'fav') {
+                        const idx = user.favorites.indexOf(id);
+                        if (idx > -1) user.favorites.splice(idx, 1);
+                        else user.favorites.push(id);
+                    } else if (action === 'watch') {
+                        const idx = user.watched.indexOf(id);
+                        if (idx > -1) user.watched.splice(idx, 1);
+                        else user.watched.push(id);
+                    } else if (action === 'drop') {
+                        const idx = user.dropped.indexOf(id);
+                        if (idx > -1) user.dropped.splice(idx, 1);
+                        else user.dropped.push(id);
+                    } else if (action === 'play') {
+                        const anime = state.animeList.find(a => a.id === id);
+                        if (anime) {
+                            state.selectedAnime = anime;
+                            state.currentEpisode = 1;
+                            state.episodes = getEpisodes(id);
+                            state.currentView = 'player';
+                            render();
+                        }
+                        return;
+                    }
+
+                    saveUsers();
+                    render();
+                });
+            });
+
+            // ----- Клик по карточке (открыть плеер) -----
+            document.querySelectorAll('.anime-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.actions')) return;
+                    const id = parseInt(card.dataset.id);
+                    const anime = state.animeList.find(a => a.id === id);
+                    if (anime) {
+                        state.selectedAnime = anime;
+                        state.currentEpisode = 1;
+                        state.episodes = getEpisodes(id);
+                        state.currentView = 'player';
+                        render();
+                    }
+                });
+            });
+
+            // ----- Эпизоды -----
+            document.querySelectorAll('.episode-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const ep = parseInt(btn.dataset.ep);
+                    state.currentEpisode = ep;
+                    render();
+                });
+            });
+
+            // ----- Качество (демо) -----
+            const qualitySelect = document.getElementById('quality-select');
+            if (qualitySelect) {
+                qualitySelect.addEventListener('change', () => {
+                    // В реальном проекте можно менять src плеера
+                    // Для демо просто показываем уведомление
+                    console.log('Качество изменено на', qualitySelect.value);
+                });
+            }
+
+            // ----- АВТОРИЗАЦИЯ -----
+            const authSubmit = document.getElementById('auth-submit');
+            const authSwitch = document.getElementById('auth-switch');
+            const authError = document.getElementById('auth-error');
+
+            if (authSubmit) {
+                authSubmit.addEventListener('click', () => {
+                    const username = document.getElementById('auth-username').value.trim();
+                    const password = document.getElementById('auth-password').value.trim();
+                    const isLogin = state.authMode === 'login';
+
+                    if (!username || !password) {
+                        state.authError = 'Заполните все поля';
+                        render();
+                        return;
+                    }
+
+                    if (isLogin) {
+                        if (login(username, password)) {
+                            state.authError = '';
+                            state.currentView = 'home';
+                            render();
+                        } else {
+                            state.authError = 'Неверное имя или пароль';
+                            render();
+                        }
+                    } else {
+                        const password2 = document.getElementById('auth-password2').value.trim();
+                        if (password !== password2) {
+                            state.authError = 'Пароли не совпадают';
+                            render();
+                            return;
+                        }
+                        if (password.length < 4) {
+                            state.authError = 'Пароль должен быть минимум 4 символа';
+                            render();
+                            return;
+                        }
+                        if (register(username, password)) {
+                            state.authError = '✅ Регистрация успешна! Теперь войдите.';
+                            state.authMode = 'login';
+                            render();
+                        } else {
+                            state.authError = 'Пользователь с таким именем уже существует';
+                            render();
+                        }
+                    }
+                });
+            }
+
+            if (authSwitch) {
+                authSwitch.addEventListener('click', () => {
+                    state.authMode = state.authMode === 'login' ? 'register' : 'login';
+                    state.authError = '';
+                    render();
+                });
+            }
+
+            // ----- Смена аватара -----
+            document.querySelectorAll('[data-action="change-avatar"]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    if (state.currentUser) {
+                        const newName = prompt('Введите новое имя (отобразится на аватарке):', state.currentUser.username);
+                        if (newName && newName.trim()) {
+                            // Обновляем имя и во всех списках пользователей
+                            const oldName = state.currentUser.username;
+                            const user = state.users.find(u => u.username === oldName);
+                            if (user) {
+                                user.username = newName.trim();
+                                state.currentUser = user;
+                                saveUsers();
+                                saveSession();
+                                render();
+                            }
+                        }
+                    }
+                });
+            });
+
+            // ----- Enter для отправки формы -----
+            document.querySelectorAll('#auth-username, #auth-password, #auth-password2').forEach(input => {
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        const submitBtn = document.getElementById('auth-submit');
+                        if (submitBtn) submitBtn.click();
+                    }
+                });
+            });
+        }
+
+        // ============================================================
+        //  INIT
+        // ============================================================
+        function init() {
+            loadUsers();
+            document.body.className = state.theme === 'dark' ? '' : 'light';
+            fetchAnimeList();
+        }
+
+        init();
+    </script>
 </body>
 </html>
