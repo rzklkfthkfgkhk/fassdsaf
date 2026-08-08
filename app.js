@@ -213,6 +213,32 @@ function generateYummyAnimeUrls(title, episode) {
   return urls;
 }
 
+// Генерация ссылок для CVH
+function generateCvhUrls(title, episode) {
+  const slug = transliterate(title).replace(/\s+/g, '-');
+  const domains = ['cvh.tv', 'cvh.xyz', 'cvh.site'];
+  const urls = [];
+  for (const domain of domains) {
+    urls.push(`https://${domain}/anime/${slug}/episode-${episode}`);
+    urls.push(`https://${domain}/anime/${slug}/episode-${episode}/`);
+    urls.push(`https://${domain}/watch/${slug}/episode-${episode}`);
+  }
+  return urls;
+}
+
+// Генерация ссылок для AniBoom
+function generateAniboomUrls(title, episode) {
+  const slug = transliterate(title).replace(/\s+/g, '-');
+  const domains = ['aniboom.tv', 'aniboom.space', 'aniboom.xyz'];
+  const urls = [];
+  for (const domain of domains) {
+    urls.push(`https://${domain}/anime/${slug}/episode-${episode}`);
+    urls.push(`https://${domain}/anime/${slug}/episode-${episode}/`);
+    urls.push(`https://${domain}/watch/${slug}/episode-${episode}`);
+  }
+  return urls;
+}
+
 // ---------- ПОИСК ВИДЕО (YouTube, VK) ----------
 async function searchVideoInvidious(query) {
   const instances = ['https://yewtu.be', 'https://invidious.snopyta.org', 'https://inv.riverside.rocks'];
@@ -291,7 +317,7 @@ async function loadVideo(anime, episode, source = 'auto') {
     }
   }
 
-  if (source === 'jutsu' || source === 'yammuanime' || source === 'yummyanime') {
+  if (['jutsu', 'yammuanime', 'yummyanime', 'cvh', 'aniboom'].includes(source)) {
     let urls = [];
     if (source === 'jutsu') {
       urls = generateJutSuUrls(title, episode);
@@ -299,6 +325,10 @@ async function loadVideo(anime, episode, source = 'auto') {
       urls = generateYammuanimeUrls(title, episode);
     } else if (source === 'yummyanime') {
       urls = generateYummyAnimeUrls(title, episode);
+    } else if (source === 'cvh') {
+      urls = generateCvhUrls(title, episode);
+    } else if (source === 'aniboom') {
+      urls = generateAniboomUrls(title, episode);
     }
     // Показываем первую ссылку в iframe
     iframe.src = urls[0];
@@ -488,6 +518,8 @@ function renderAnimeDetail(anime) {
           <button data-source="jutsu">🎬 Jut.su</button>
           <button data-source="yammuanime">🎬 Yammuanime</button>
           <button data-source="yummyanime">🎬 YummyAnime</button>
+          <button data-source="cvh">🎬 CVH</button>
+          <button data-source="aniboom">🎬 AniBoom</button>
           <button data-source="manual">🔗 Ссылка</button>
         </div>
         <div id="playerContent">
@@ -501,7 +533,7 @@ function renderAnimeDetail(anime) {
         </div>
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
           💡 Для VK нужен сервисный ключ (настройки в профиле). 
-          Ссылки на Jut.su / Yammuanime / YummyAnime генерируются автоматически, но могут не работать – исправьте вручную.
+          Ссылки на сайты генерируются автоматически, но могут не работать – исправьте вручную.
         </p>
       </div>
     </div>
@@ -864,4 +896,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с поддержкой YummyAnime');
+console.log('AniList App с поддержкой CVH и AniBoom');
