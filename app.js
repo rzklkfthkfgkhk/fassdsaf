@@ -10,6 +10,10 @@ const STATE = {
   userLists: {},
   avatars: {},
   theme: 'light',
+  videoSource: 'direct', // 'direct', 'youtube', 'vk'
+  videoUrl: '',
+  vkVideoId: '',
+  youtubeQuery: '',
 };
 
 // ---------- FALLBACK СПИСОК АНИМЕ ----------
@@ -156,18 +160,120 @@ async function fetchAnimeById(id) {
   }
 }
 
-// ---------- ЗАГРУЗКА ВИДЕО (только через ручной ввод ID) ----------
-function loadVideo(animeId, episode) {
-  const iframe = $('#playerIframe');
-  if (!iframe) return;
-  if (!animeId) {
-    iframe.src = '';
-    alert('Введите ID аниме с Gogoanime (например, attack-on-titan)');
+// ---------- ПЛЕЕР ----------
+function playDirect(url) {
+  const player = document.getElementById('animePlayer');
+  if (!player) return;
+  if (!url) {
+    player.src = '';
+    player.load();
     return;
   }
-  const url = `https://vidsrc.to/embed/anime/${animeId}/${episode}`;
-  iframe.src = url;
-  console.log('Видео загружено:', url);
+  player.src = url;
+  player.load();
+  player.play().catch(e => console.warn('Автовоспроизведение заблокировано', e));
+}
+
+function playYouTube(query) {
+  const container = document.getElementById('playerContainer');
+  if (!container) return;
+  // Показываем iframe YouTube
+  const iframe = document.createElement('iframe');
+  iframe.width = '100%';
+  iframe.height = '450';
+  iframe.src = `https://www.youtube.com/embed/?listType=search&list=${encodeURIComponent(query)}`;
+  iframe.title = 'YouTube video player';
+  iframe.frameBorder = '0';
+  iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+  iframe.allowFullscreen = true;
+  container.innerHTML = '';
+  container.appendChild(iframe);
+}
+
+function playVK(videoId) {
+  const container = document.getElementById('playerContainer');
+  if (!container) return;
+  if (!videoId) {
+    container.innerHTML = '<p style="color:var(--text-secondary);">Введите ID видео VK (например, video-12345_67890)</p>';
+    return;
+  }
+  // Используем виджет VK
+  container.innerHTML = `<div id="vk_player"></div>`;
+  if (window.VK && VK.Widgets) {
+    VK.Widgets.Player('vk_player', { video: videoId });
+  } else {
+    // Загружаем VK API
+    const script = document.createElement('script');
+    script.src = 'https://vk.com/js/api/vk_api.js?169';
+    script.onload = () => {
+      if (window.VK && VK.Widgets) {
+        VK.Widgets.Player('vk_player', { video: videoId });
+      } else {
+        container.innerHTML = '<p style="color:var(--text-secondary);">Не удалось загрузить VK API</p>';
+      }
+    };
+    document.head.appendChild(script);
+  }
+}
+
+function renderPlayer(source, data) {
+  const container = document.getElementById('playerContainer');
+  if (!container) return;
+  // Очищаем контейнер
+  container.innerHTML = '';
+
+  if (source === 'direct') {
+    const video = document.createElement('video');
+    video.id = 'animePlayer';
+    video.controls = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.width = '100%';
+    video.style.maxWidth = '100%';
+    video.style.height = 'auto';
+    video.style.borderRadius = '8px';
+    video.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+    video.poster = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect width="400" height="300" fill="%23333"/%3E%3Ctext x="50" y="150" fill="%23aaa" font-size="20"%3ENo video loaded%3C/text%3E%3C/svg%3E';
+    container.appendChild(video);
+    if (data) {
+      video.src = data;
+      video.load();
+      video.play().catch(e => console.warn('Автовоспроизведение заблокировано', e));
+    }
+  } else if (source === 'youtube') {
+    const iframe = document.createElement('iframe');
+    iframe.width = '100%';
+    iframe.height = '450';
+    iframe.src = `https://www.youtube.com/embed/?listType=search&list=${encodeURIComponent(data || '')}`;
+    iframe.title = 'YouTube video player';
+    iframe.frameBorder = '0';
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+    iframe.allowFullscreen = true;
+    container.appendChild(iframe);
+  } else if (source === 'vk') {
+    if (data) {
+      const vkDiv = document.createElement('div');
+      vkDiv.id = 'vk_player';
+      container.appendChild(vkDiv);
+      // Загружаем VK API если ещё не загружен
+      if (window.VK && VK.Widgets) {
+        VK.Widgets.Player('vk_player', { video: data });
+      } else {
+        const script = document.createElement('script');
+        script.src = 'https://vk.com/js/api/vk_api.js?169';
+        script.onload = () => {
+          if (window.VK && VK.Widgets) {
+            VK.Widgets.Player('vk_player', { video: data });
+          } else {
+            container.innerHTML = '<p style="color:var(--text-secondary);">Не удалось загрузить VK API</p>';
+          }
+        };
+        document.head.appendChild(script);
+      }
+    } else {
+      container.innerHTML = '<p style="color:var(--text-secondary);">Введите ID видео VK</p>';
+    }
+  }
 }
 
 // ---------- РЕНДЕРИНГ ----------
@@ -295,29 +401,40 @@ function renderAnimeDetail(anime) {
         <div id="episodeListContainer" class="episode-list"></div>
 
         <div style="margin:1rem 0; padding:0.5rem; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-input);">
-          <div style="display:flex; gap:0.8rem; flex-wrap:wrap; align-items:center;">
-            <label for="animeIdInput" style="font-weight:bold;">ID аниме (Gogoanime):</label>
-            <input type="text" id="animeIdInput" placeholder="например, attack-on-titan" style="flex:2; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-body); color:var(--text-primary);" />
-            <button id="loadVideoBtn" style="background:#3b82f6; color:white; border:none; padding:0.5rem 1.5rem; border-radius:20px;">▶ Смотреть</button>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+            <button class="source-btn" data-source="direct">📁 Прямая ссылка</button>
+            <button class="source-btn" data-source="youtube">▶ YouTube</button>
+            <button class="source-btn" data-source="vk">📺 VK</button>
           </div>
-          <p style="font-size:0.8rem; opacity:0.7; margin-top:0.3rem;">
-            Как найти ID: откройте <a href="https://anitaku.to/" target="_blank">anitaku.to</a>, найдите аниме, скопируйте часть URL после /category/ (например, attack-on-titan).
-          </p>
+          <div id="sourceControls">
+            <div id="directControl" style="display:flex; gap:0.8rem; flex-wrap:wrap; align-items:center;">
+              <input type="text" id="directUrlInput" placeholder="Введите ссылку на MP4-видео" style="flex:2; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-body); color:var(--text-primary);" />
+              <button id="directPlayBtn" style="background:#3b82f6; color:white; border:none; padding:0.3rem 1.2rem; border-radius:20px;">Загрузить</button>
+            </div>
+            <div id="youtubeControl" style="display:none; flex-wrap:wrap; gap:0.8rem; align-items:center;">
+              <input type="text" id="youtubeQueryInput" placeholder="Введите поисковый запрос (например, Attack on Titan 1 серия)" style="flex:2; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-body); color:var(--text-primary);" />
+              <button id="youtubePlayBtn" style="background:#f00; color:white; border:none; padding:0.3rem 1.2rem; border-radius:20px;">Поиск на YouTube</button>
+            </div>
+            <div id="vkControl" style="display:none; flex-wrap:wrap; gap:0.8rem; align-items:center;">
+              <input type="text" id="vkVideoIdInput" placeholder="Введите ID видео (например, video-12345_67890)" style="flex:2; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-body); color:var(--text-primary);" />
+              <button id="vkPlayBtn" style="background:#4c75a3; color:white; border:none; padding:0.3rem 1.2rem; border-radius:20px;">Загрузить VK</button>
+            </div>
+          </div>
         </div>
 
-        <div id="playerContent">
-          <div class="video-container" id="videoContainer">
-            <iframe id="playerIframe" src="" allowfullscreen></iframe>
-          </div>
+        <div id="playerContainer">
+          <!-- Здесь будет плеер -->
         </div>
+
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
-          🎬 Плеер vidsrc.to. Введите ID аниме с Gogoanime и выберите серию.
+          🎬 Вставьте ссылку на видео вручную или используйте поиск YouTube / VK.
         </p>
       </div>
     </div>
   `;
   container.innerHTML = html;
 
+  // Обработчик "На главную"
   $('#backToHome')?.addEventListener('click', () => {
     STATE.selectedAnime = null;
     STATE.searchQuery = '';
@@ -332,50 +449,84 @@ function renderAnimeDetail(anime) {
   }
   epContainer.innerHTML = epHtml;
 
-  // Обработчик выбора серии
+  // Обработчик выбора серии (просто запоминаем номер)
   epContainer.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       const ep = parseInt(btn.dataset.ep);
       STATE.selectedEpisode = ep;
       epContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
       btn.classList.add('active-ep');
-      // Если уже введён ID, загружаем видео
-      const idInput = document.getElementById('animeIdInput');
-      if (idInput && idInput.value.trim()) {
-        loadVideo(idInput.value.trim(), ep);
-      } else {
-        alert('Введите ID аниме в поле выше');
-      }
     });
   });
 
-  // Обработчик кнопки "Смотреть"
-  const loadBtn = document.getElementById('loadVideoBtn');
-  const idInput = document.getElementById('animeIdInput');
-  loadBtn?.addEventListener('click', () => {
-    const id = idInput.value.trim();
-    if (!id) {
-      alert('Введите ID аниме');
+  // Управление источниками
+  const sourceBtns = document.querySelectorAll('.source-btn');
+  const directControl = document.getElementById('directControl');
+  const youtubeControl = document.getElementById('youtubeControl');
+  const vkControl = document.getElementById('vkControl');
+  const playerContainer = document.getElementById('playerContainer');
+
+  sourceBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      sourceBtns.forEach(b => b.style.background = '');
+      btn.style.background = 'var(--accent)';
+      btn.style.color = 'white';
+      const source = btn.dataset.source;
+      directControl.style.display = source === 'direct' ? 'flex' : 'none';
+      youtubeControl.style.display = source === 'youtube' ? 'flex' : 'none';
+      vkControl.style.display = source === 'vk' ? 'flex' : 'none';
+      // Очищаем плеер
+      playerContainer.innerHTML = '';
+      // Сохраняем выбранный источник
+      STATE.videoSource = source;
+    });
+  });
+  // По умолчанию активируем direct
+  const defaultBtn = document.querySelector('.source-btn[data-source="direct"]');
+  if (defaultBtn) defaultBtn.click();
+
+  // Прямая ссылка
+  document.getElementById('directPlayBtn')?.addEventListener('click', () => {
+    const url = document.getElementById('directUrlInput').value.trim();
+    if (!url) {
+      alert('Введите ссылку на видео');
       return;
     }
-    loadVideo(id, STATE.selectedEpisode);
+    renderPlayer('direct', url);
+    // Сохраняем в историю
+    localStorage.setItem('lastVideoUrl', url);
   });
 
-  // Если уже есть сохранённый ID в localStorage, подставляем его
-  const savedId = localStorage.getItem('lastAnimeId');
-  if (savedId && idInput) {
-    idInput.value = savedId;
-  }
-  // Сохраняем ID при загрузке
-  loadBtn?.addEventListener('click', () => {
-    const id = idInput.value.trim();
-    if (id) localStorage.setItem('lastAnimeId', id);
+  // YouTube
+  document.getElementById('youtubePlayBtn')?.addEventListener('click', () => {
+    const query = document.getElementById('youtubeQueryInput').value.trim();
+    if (!query) {
+      alert('Введите поисковый запрос');
+      return;
+    }
+    renderPlayer('youtube', query);
   });
 
-  // Если серия выбрана и ID уже есть – загружаем автоматически
-  if (idInput && idInput.value.trim()) {
-    loadVideo(idInput.value.trim(), STATE.selectedEpisode);
+  // VK
+  document.getElementById('vkPlayBtn')?.addEventListener('click', () => {
+    const videoId = document.getElementById('vkVideoIdInput').value.trim();
+    if (!videoId) {
+      alert('Введите ID видео VK (например, video-12345_67890)');
+      return;
+    }
+    renderPlayer('vk', videoId);
+  });
+
+  // Если есть сохранённая ссылка, подставляем
+  const savedUrl = localStorage.getItem('lastVideoUrl');
+  if (savedUrl) {
+    const input = document.getElementById('directUrlInput');
+    if (input) input.value = savedUrl;
+    // Автоматически загружаем, если это прямое видео
+    renderPlayer('direct', savedUrl);
   }
+
+  // Если выбрана серия, можно связать с плеером (но пользователь сам нажимает загрузить)
 }
 
 // ---------- ПРОФИЛЬ ----------
@@ -449,7 +600,7 @@ async function renderProfileList(type) {
   }
 }
 
-// ---------- МОДАЛКИ (авторизация, аватарка, тема) ----------
+// ---------- МОДАЛКИ ----------
 const authModal = $('#authModal');
 const authForm = $('#authForm');
 let isLoginMode = true;
@@ -643,4 +794,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с ручным вводом ID (Gogoanime)');
+console.log('AniList App с ручным плеером (прямые ссылки, YouTube, VK)');
