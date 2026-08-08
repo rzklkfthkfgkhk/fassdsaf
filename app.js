@@ -10,8 +10,6 @@ const STATE = {
   userLists: {},
   avatars: {},
   theme: 'light',
-  manualVideoUrl: null,
-  manualAnimeId: null, // для ручного ввода ID Gogoanime
 };
 
 // ---------- FALLBACK СПИСОК АНИМЕ ----------
@@ -158,144 +156,21 @@ async function fetchAnimeById(id) {
   }
 }
 
-// ---------- ПОЛУЧЕНИЕ ID АНИМЕ ----------
-const CONSUMET_API = 'https://api.consumet.org/anime/gogoanime';
-const CORS_PROXY = 'https://corsproxy.io/';
-const ID_CACHE = {};
-
-// Метод 1: через consumet API
-async function getAnimeIdConsumet(animeTitle) {
-  const key = animeTitle.toLowerCase();
-  if (ID_CACHE[key]) return ID_CACHE[key];
-
-  const slug = animeTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  try {
-    const url = `${CONSUMET_API}/${slug}`;
-    console.log('consumet запрос:', url);
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      console.warn('consumet ответ:', resp.status);
-      return null;
-    }
-    const data = await resp.json();
-    console.log('consumet ответ:', data);
-    if (data && data.results && data.results.length > 0) {
-      const id = data.results[0].id;
-      ID_CACHE[key] = id;
-      console.log('Найден ID (consumet):', id);
-      return id;
-    }
-    return null;
-  } catch (e) {
-    console.error('consumet ошибка:', e);
-    return null;
-  }
-}
-
-// Метод 2: парсинг страницы Gogoanime (запасной)
-async function getAnimeIdGogo(animeTitle) {
-  const key = animeTitle.toLowerCase();
-  if (ID_CACHE[key]) return ID_CACHE[key];
-
-  const slug = animeTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  try {
-    const url = `${CORS_PROXY}https://gogoanime.gg/category/${slug}`;
-    console.log('Gogoanime запрос (через прокси):', url);
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      console.warn('Gogoanime ответ:', resp.status);
-      return null;
-    }
-    const html = await resp.text();
-    // Ищем ID в атрибуте data-id (обычно на странице есть элемент с data-id)
-    const match = html.match(/<input[^>]*id="movie_id"[^>]*value="([^"]+)"/);
-    if (match) {
-      const id = match[1];
-      ID_CACHE[key] = id;
-      console.log('Найден ID (Gogoanime):', id);
-      return id;
-    }
-    // Другой вариант: ищем в data-video
-    const match2 = html.match(/data-video="([^"]+)"/);
-    if (match2) {
-      const videoUrl = match2[1];
-      // Извлекаем ID из URL (например, https://gogoanime.gg/embed/attack-on-titan-episode-1 -> attack-on-titan)
-      const idMatch = videoUrl.match(/\/embed\/([^\/]+)/);
-      if (idMatch) {
-        const id = idMatch[1];
-        ID_CACHE[key] = id;
-        console.log('Найден ID (из data-video):', id);
-        return id;
-      }
-    }
-    return null;
-  } catch (e) {
-    console.error('Gogoanime парсинг ошибка:', e);
-    return null;
-  }
-}
-
-// Основная функция получения ID (сначала consumet, потом парсинг)
-async function getAnimeId(animeTitle) {
-  let id = await getAnimeIdConsumet(animeTitle);
-  if (id) return id;
-  id = await getAnimeIdGogo(animeTitle);
-  return id;
-}
-
-async function getVideoUrl(animeTitle, episode, manualId = null) {
-  let id = manualId || await getAnimeId(animeTitle);
-  if (!id) return null;
-  // Если id содержит не только цифры (например, "attack-on-titan"), оставляем как есть
-  return `https://vidsrc.to/embed/anime/${id}/${episode}`;
-}
-
-// ---------- ЗАГРУЗКА ВИДЕО ----------
-async function loadVideo(anime, episode) {
+// ---------- ЗАГРУЗКА ВИДЕО (только через ручной ввод ID) ----------
+function loadVideo(animeId, episode) {
   const iframe = $('#playerIframe');
   if (!iframe) return;
-
-  // Ручная ссылка
-  if (STATE.manualVideoUrl) {
-    iframe.src = STATE.manualVideoUrl;
+  if (!animeId) {
+    iframe.src = '';
+    alert('Введите ID аниме с Gogoanime (например, attack-on-titan)');
     return;
   }
-
-  const title = anime.title.romaji || anime.title.english || anime.title.native || '';
-  const loadingMsg = document.getElementById('loadingMessage');
-  if (loadingMsg) loadingMsg.style.display = 'block';
-  iframe.src = '';
-
-  let videoUrl = null;
-  // Если есть ручной ID, используем его
-  if (STATE.manualAnimeId) {
-    videoUrl = await getVideoUrl(title, episode, STATE.manualAnimeId);
-  } else {
-    videoUrl = await getVideoUrl(title, episode);
-  }
-
-  if (loadingMsg) loadingMsg.style.display = 'none';
-
-  if (videoUrl) {
-    iframe.src = videoUrl;
-    console.log('Видео загружено:', videoUrl);
-  } else {
-    alert('Не удалось найти ID аниме. Попробуйте ввести ID вручную (см. поле "ID аниме" ниже) или вставьте ссылку.');
-    // Показываем поле для ручного ID
-    const manualIdContainer = document.getElementById('manualIdContainer');
-    if (manualIdContainer) manualIdContainer.style.display = 'block';
-  }
+  const url = `https://vidsrc.to/embed/anime/${animeId}/${episode}`;
+  iframe.src = url;
+  console.log('Видео загружено:', url);
 }
 
-// ---------- РЕНДЕРИНГ (полный) ----------
+// ---------- РЕНДЕРИНГ ----------
 const container = $('#pageContainer');
 
 function clearContainer() { container.innerHTML = ''; }
@@ -390,8 +265,6 @@ async function openAnimeDetail(id) {
     }
     STATE.selectedAnime = anime;
     STATE.selectedEpisode = 1;
-    STATE.manualVideoUrl = null;
-    STATE.manualAnimeId = null;
     renderAnimeDetail(anime);
   } catch (e) {
     container.innerHTML = `<div class="loading">Ошибка: ${e.message}</div>`;
@@ -421,36 +294,24 @@ function renderAnimeDetail(anime) {
         <h3>Выбор серии</h3>
         <div id="episodeListContainer" class="episode-list"></div>
 
-        <div id="sourceTabs" style="display:flex; gap:0.5rem; flex-wrap:wrap; margin:1rem 0;">
-          <button class="source-tab active-tab" data-source="auto">▶ Автопоиск</button>
-          <button class="source-tab" data-source="manual">🔗 Ссылка</button>
-        </div>
-
-        <div id="manualIdContainer" style="display:none; margin:1rem 0; padding:0.5rem; border:1px solid var(--border-color); border-radius:10px;">
+        <div style="margin:1rem 0; padding:0.5rem; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-input);">
           <div style="display:flex; gap:0.8rem; flex-wrap:wrap; align-items:center;">
-            <input type="text" id="manualIdInput" placeholder="Введите ID аниме (например, attack-on-titan)" style="flex:2; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-input); color:var(--text-primary);" />
-            <button id="manualIdApplyBtn" style="background:#3b82f6; color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Применить ID</button>
-            <button id="manualIdClearBtn" style="background:#ef4444; color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Сбросить ID</button>
+            <label for="animeIdInput" style="font-weight:bold;">ID аниме (Gogoanime):</label>
+            <input type="text" id="animeIdInput" placeholder="например, attack-on-titan" style="flex:2; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-body); color:var(--text-primary);" />
+            <button id="loadVideoBtn" style="background:#3b82f6; color:white; border:none; padding:0.5rem 1.5rem; border-radius:20px;">▶ Смотреть</button>
           </div>
-          <p style="font-size:0.8rem; opacity:0.7; margin-top:0.3rem;">Пример ID: attack-on-titan (можно посмотреть в URL на gogoanime)</p>
-        </div>
-
-        <div id="manualControls" style="margin-bottom:1rem; display:none;">
-          <div style="display:flex; gap:0.8rem; flex-wrap:wrap; align-items:center;">
-            <input type="text" id="manualUrlInput" placeholder="Вставьте ссылку на видео (iframe)" style="flex:1; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-input); color:var(--text-primary);" />
-            <button id="manualUrlApplyBtn" style="background:#10b981; color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Применить</button>
-            <button id="manualUrlClearBtn" style="background:#ef4444; color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Очистить</button>
-          </div>
+          <p style="font-size:0.8rem; opacity:0.7; margin-top:0.3rem;">
+            Как найти ID: откройте <a href="https://anitaku.to/" target="_blank">anitaku.to</a>, найдите аниме, скопируйте часть URL после /category/ (например, attack-on-titan).
+          </p>
         </div>
 
         <div id="playerContent">
           <div class="video-container" id="videoContainer">
-            <div id="loadingMessage" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; font-size:1.2rem; z-index:10;">Поиск видео...</div>
             <iframe id="playerIframe" src="" allowfullscreen></iframe>
           </div>
         </div>
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
-          🎬 Автопоиск через Gogoanime + vidsrc.to. Если не работает – введите ID вручную или вставьте ссылку.
+          🎬 Плеер vidsrc.to. Введите ID аниме с Gogoanime и выберите серию.
         </p>
       </div>
     </div>
@@ -471,108 +332,49 @@ function renderAnimeDetail(anime) {
   }
   epContainer.innerHTML = epHtml;
 
+  // Обработчик выбора серии
   epContainer.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       const ep = parseInt(btn.dataset.ep);
       STATE.selectedEpisode = ep;
       epContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
       btn.classList.add('active-ep');
-      const activeTab = document.querySelector('.source-tab.active-tab');
-      const source = activeTab ? activeTab.dataset.source : 'auto';
-      if (source === 'auto') {
-        loadVideo(anime, ep);
+      // Если уже введён ID, загружаем видео
+      const idInput = document.getElementById('animeIdInput');
+      if (idInput && idInput.value.trim()) {
+        loadVideo(idInput.value.trim(), ep);
       } else {
-        if (!STATE.manualVideoUrl) {
-          alert('Вставьте ссылку вручную или переключитесь на автопоиск');
-        }
+        alert('Введите ID аниме в поле выше');
       }
     });
   });
 
-  // Вкладки
-  const sourceTabs = document.querySelectorAll('.source-tab');
-  const manualControls = document.getElementById('manualControls');
-  const manualIdContainer = document.getElementById('manualIdContainer');
-  sourceTabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      sourceTabs.forEach(t => t.classList.remove('active-tab'));
-      tab.classList.add('active-tab');
-      const source = tab.dataset.source;
-      if (source === 'manual') {
-        manualControls.style.display = 'block';
-        manualIdContainer.style.display = 'none';
-        const iframe = $('#playerIframe');
-        if (iframe && !STATE.manualVideoUrl) {
-          iframe.src = '';
-        }
-      } else {
-        manualControls.style.display = 'none';
-        if (!STATE.manualVideoUrl) {
-          const anime = STATE.selectedAnime;
-          if (anime) loadVideo(anime, STATE.selectedEpisode);
-        }
-      }
-    });
-  });
-
-  // Ручной ID
-  const manualIdInput = document.getElementById('manualIdInput');
-  const manualIdApplyBtn = document.getElementById('manualIdApplyBtn');
-  const manualIdClearBtn = document.getElementById('manualIdClearBtn');
-
-  manualIdApplyBtn?.addEventListener('click', () => {
-    const id = manualIdInput.value.trim();
+  // Обработчик кнопки "Смотреть"
+  const loadBtn = document.getElementById('loadVideoBtn');
+  const idInput = document.getElementById('animeIdInput');
+  loadBtn?.addEventListener('click', () => {
+    const id = idInput.value.trim();
     if (!id) {
-      alert('Введите ID');
+      alert('Введите ID аниме');
       return;
     }
-    STATE.manualAnimeId = id;
-    // Перезагружаем видео
-    const anime = STATE.selectedAnime;
-    if (anime) loadVideo(anime, STATE.selectedEpisode);
-    manualIdContainer.style.display = 'none';
+    loadVideo(id, STATE.selectedEpisode);
   });
 
-  manualIdClearBtn?.addEventListener('click', () => {
-    STATE.manualAnimeId = null;
-    manualIdInput.value = '';
-    const anime = STATE.selectedAnime;
-    if (anime) loadVideo(anime, STATE.selectedEpisode);
-    manualIdContainer.style.display = 'none';
+  // Если уже есть сохранённый ID в localStorage, подставляем его
+  const savedId = localStorage.getItem('lastAnimeId');
+  if (savedId && idInput) {
+    idInput.value = savedId;
+  }
+  // Сохраняем ID при загрузке
+  loadBtn?.addEventListener('click', () => {
+    const id = idInput.value.trim();
+    if (id) localStorage.setItem('lastAnimeId', id);
   });
 
-  // Ручная ссылка
-  const manualUrlInput = document.getElementById('manualUrlInput');
-  const manualUrlApplyBtn = document.getElementById('manualUrlApplyBtn');
-  const manualUrlClearBtn = document.getElementById('manualUrlClearBtn');
-
-  manualUrlApplyBtn?.addEventListener('click', () => {
-    const url = manualUrlInput.value.trim();
-    if (!url) {
-      alert('Введите ссылку');
-      return;
-    }
-    STATE.manualVideoUrl = url;
-    const iframe = $('#playerIframe');
-    if (iframe) iframe.src = url;
-    const manualTab = document.querySelector('.source-tab[data-source="manual"]');
-    if (manualTab && !manualTab.classList.contains('active-tab')) {
-      manualTab.click();
-    }
-  });
-
-  manualUrlClearBtn?.addEventListener('click', () => {
-    STATE.manualVideoUrl = null;
-    const iframe = $('#playerIframe');
-    if (iframe) iframe.src = '';
-    manualUrlInput.value = '';
-    const autoTab = document.querySelector('.source-tab[data-source="auto"]');
-    if (autoTab) autoTab.click();
-  });
-
-  // Если автопоиск – загружаем первую серию
-  if (document.querySelector('.source-tab.active-tab')?.dataset.source === 'auto') {
-    loadVideo(anime, STATE.selectedEpisode);
+  // Если серия выбрана и ID уже есть – загружаем автоматически
+  if (idInput && idInput.value.trim()) {
+    loadVideo(idInput.value.trim(), STATE.selectedEpisode);
   }
 }
 
@@ -647,7 +449,7 @@ async function renderProfileList(type) {
   }
 }
 
-// ---------- МОДАЛКИ ----------
+// ---------- МОДАЛКИ (авторизация, аватарка, тема) ----------
 const authModal = $('#authModal');
 const authForm = $('#authForm');
 let isLoginMode = true;
@@ -841,4 +643,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с автопоиском (consumet + Gogoanime) и ручным ID');
+console.log('AniList App с ручным вводом ID (Gogoanime)');
