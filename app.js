@@ -10,8 +10,7 @@ const STATE = {
   userLists: {},
   avatars: {},
   theme: 'light',
-  manualVideoUrl: null,         // для ручной ссылки
-  episodeCache: {},             // кэш ссылок по ключу "title-episode"
+  manualVideoUrl: null,
 };
 
 // ---------- FALLBACK СПИСОК АНИМЕ ----------
@@ -158,78 +157,60 @@ async function fetchAnimeById(id) {
   }
 }
 
-// ---------- ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ ВИДЕО (С ПАРСИНГОМ) ----------
-// Используем публичный CORS-прокси для обхода ограничений браузера
-// Если прокси не работает, замените на свой или используйте ручной ввод
-const CORS_PROXY = 'https://corsproxy.io/';
+// ---------- ПОЛУЧЕНИЕ ВИДЕО ЧЕРЕЗ API CONSUMET ----------
+// Используем публичное API consumet для получения ID аниме на Gogoanime
+const CONSUMET_API = 'https://api.consumet.org/anime/gogoanime';
 
-async function getVideoUrl(animeTitle, episode) {
+// Кэшируем ID, чтобы не делать повторные запросы
+const animeIdCache = {};
+
+async function getAnimeId(animeTitle) {
   // Проверяем кэш
-  const cacheKey = `${animeTitle}-${episode}`.toLowerCase();
-  if (STATE.episodeCache[cacheKey]) {
-    console.log('Используем кэш для', cacheKey);
-    return STATE.episodeCache[cacheKey];
+  const cacheKey = animeTitle.toLowerCase();
+  if (animeIdCache[cacheKey]) {
+    return animeIdCache[cacheKey];
   }
 
-  // Формируем слаг (часть URL) из названия аниме
+  // Формируем слаг для поиска (транслитерация)
   const slug = animeTitle
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-  // URL страницы на anitaku.to
-  const pageUrl = `https://anitaku.to/${slug}-episode-${episode}`;
-  console.log('Запрос страницы:', pageUrl);
-
   try {
-    // Делаем запрос через прокси
-    const response = await fetch(`${CORS_PROXY}${pageUrl}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-    });
-
+    const url = `${CONSUMET_API}/${slug}`;
+    console.log('Запрос к consumet:', url);
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error ${response.status}`);
     }
-
-    const html = await response.text();
-
-    // Ищем атрибут data-video или iframe src в странице
-    // Вариант 1: data-video="https://vibeplayer.site/embed/..."
-    let match = html.match(/data-video="([^"]+)"/);
-    if (match) {
-      const videoUrl = match[1];
-      STATE.episodeCache[cacheKey] = videoUrl;
-      console.log('Найдено видео через data-video:', videoUrl);
-      return videoUrl;
+    const data = await response.json();
+    // consumet возвращает объект с полем results
+    if (data && data.results && data.results.length > 0) {
+      // Берём первый результат (обычно самый релевантный)
+      const id = data.results[0].id;
+      animeIdCache[cacheKey] = id;
+      console.log('Найден ID:', id);
+      return id;
+    } else {
+      console.warn('Аниме не найдено в consumet');
+      return null;
     }
-
-    // Вариант 2: если data-video нет, ищем iframe с плеером
-    match = html.match(/<iframe[^>]+src="([^"]+)"[^>]*>/);
-    if (match && match[1].includes('vibeplayer') || match[1].includes('gogoanime')) {
-      const videoUrl = match[1];
-      STATE.episodeCache[cacheKey] = videoUrl;
-      console.log('Найдено видео через iframe:', videoUrl);
-      return videoUrl;
-    }
-
-    // Если ничего не нашли, пробуем альтернативный плеер (если есть)
-    // Иногда ссылка на плеер лежит в атрибуте data-player
-    match = html.match(/data-player="([^"]+)"/);
-    if (match) {
-      const videoUrl = match[1];
-      STATE.episodeCache[cacheKey] = videoUrl;
-      console.log('Найдено видео через data-player:', videoUrl);
-      return videoUrl;
-    }
-
-    console.warn('Не удалось найти ссылку на видео на странице');
-    return null;
   } catch (error) {
-    console.error('Ошибка при получении видео:', error);
+    console.error('Ошибка при запросе к consumet:', error);
     return null;
   }
+}
+
+async function getVideoUrl(animeTitle, episode) {
+  const id = await getAnimeId(animeTitle);
+  if (!id) {
+    return null;
+  }
+  // Формируем ссылку на плеер vibeplayer.site
+  const videoUrl = `https://vibeplayer.site/embed/${id}-episode-${episode}`;
+  console.log('Ссылка на плеер:', videoUrl);
+  return videoUrl;
 }
 
 // ---------- ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ ВИДЕО ----------
@@ -246,10 +227,10 @@ async function loadVideo(anime, episode) {
   // Получаем название для поиска
   const title = anime.title.romaji || anime.title.english || anime.title.native || '';
 
-  // Показываем индикатор загрузки в плеере
-  iframe.src = '';
+  // Показываем индикатор загрузки
   const loadingMsg = document.getElementById('loadingMessage');
   if (loadingMsg) loadingMsg.style.display = 'block';
+  iframe.src = '';
 
   // Пытаемся получить ссылку на видео
   const videoUrl = await getVideoUrl(title, episode);
@@ -260,7 +241,7 @@ async function loadVideo(anime, episode) {
     iframe.src = videoUrl;
   } else {
     // Если не удалось, показываем сообщение и предлагаем ручной ввод
-    alert('Не удалось загрузить видео автоматически. Попробуйте вставить ссылку вручную (кнопка "Вставить ссылку").');
+    alert('Не удалось найти видео автоматически. Попробуйте вставить ссылку вручную (кнопка "Ссылка").');
     // Переключаемся на ручной режим
     const manualTab = document.querySelector('.source-tab[data-source="manual"]');
     if (manualTab) manualTab.click();
@@ -362,7 +343,7 @@ async function openAnimeDetail(id) {
     }
     STATE.selectedAnime = anime;
     STATE.selectedEpisode = 1;
-    STATE.manualVideoUrl = null; // сбрасываем ручную ссылку
+    STATE.manualVideoUrl = null;
     renderAnimeDetail(anime);
   } catch (e) {
     container.innerHTML = `<div class="loading">Ошибка: ${e.message}</div>`;
@@ -412,7 +393,7 @@ function renderAnimeDetail(anime) {
           </div>
         </div>
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
-          🎬 Автоматический поиск через anitaku.to (Gogoanime). Если не работает – вставьте ссылку вручную.
+          🎬 Видео загружаются через Gogoanime. Если не работает – вставьте ссылку вручную.
         </p>
       </div>
     </div>
@@ -447,8 +428,6 @@ function renderAnimeDetail(anime) {
       if (source === 'auto') {
         loadVideo(anime, ep);
       } else {
-        // Если ручной режим, но ссылка уже была вставлена, то она уже в iframe
-        // Ничего не делаем, если ссылка уже установлена
         if (!STATE.manualVideoUrl) {
           alert('Вставьте ссылку вручную или переключитесь на автопоиск');
         }
@@ -466,15 +445,12 @@ function renderAnimeDetail(anime) {
       const source = tab.dataset.source;
       if (source === 'manual') {
         manualControls.style.display = 'block';
-        // Очищаем iframe, если там была авто-ссылка
         const iframe = $('#playerIframe');
         if (iframe && !STATE.manualVideoUrl) {
           iframe.src = '';
         }
       } else {
         manualControls.style.display = 'none';
-        // Если был ручной режим и ссылка вставлена, оставляем её
-        // Если нет – загружаем автоматически
         if (!STATE.manualVideoUrl) {
           const anime = STATE.selectedAnime;
           if (anime) loadVideo(anime, STATE.selectedEpisode);
@@ -497,7 +473,7 @@ function renderAnimeDetail(anime) {
     STATE.manualVideoUrl = url;
     const iframe = $('#playerIframe');
     if (iframe) iframe.src = url;
-    // Переключаем на ручной режим, если ещё не активен
+    // Переключаем на ручной режим
     const manualTab = document.querySelector('.source-tab[data-source="manual"]');
     if (manualTab && !manualTab.classList.contains('active-tab')) {
       manualTab.click();
@@ -509,7 +485,6 @@ function renderAnimeDetail(anime) {
     const iframe = $('#playerIframe');
     if (iframe) iframe.src = '';
     manualUrlInput.value = '';
-    // Переключаем на автопоиск
     const autoTab = document.querySelector('.source-tab[data-source="auto"]');
     if (autoTab) autoTab.click();
   });
@@ -727,7 +702,6 @@ $('#homeLink')?.addEventListener('click', (e) => {
   STATE.currentPage = 'home';
   STATE.selectedAnime = null;
   STATE.searchQuery = '';
-  STATE.episodeCache = {}; // сброс кэша
   renderCurrentPage();
 });
 
@@ -746,7 +720,6 @@ $('#logoutBtn')?.addEventListener('click', () => {
   STATE.currentPage = 'home';
   STATE.selectedAnime = null;
   STATE.searchQuery = '';
-  STATE.episodeCache = {};
   renderCurrentPage();
   updateUI();
 });
@@ -764,7 +737,6 @@ searchBtn?.addEventListener('click', () => {
     STATE.searchQuery = query;
     STATE.currentPage = 'home';
     STATE.selectedAnime = null;
-    STATE.episodeCache = {};
     renderCurrentPage();
   } else {
     alert('Введите название для поиска');
@@ -780,7 +752,6 @@ clearSearchBtn?.addEventListener('click', () => {
   searchInput.value = '';
   STATE.currentPage = 'home';
   STATE.selectedAnime = null;
-  STATE.episodeCache = {};
   renderCurrentPage();
 });
 
@@ -789,4 +760,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с плеером от anitaku.to (vibeplayer.site)');
+console.log('AniList App с автопоиском через consumet API');
