@@ -10,9 +10,8 @@ const STATE = {
   userLists: {},
   avatars: {},
   theme: 'light',
-  anilibriaId: null,
-  manualVideoUrl: null,
-  currentSource: 'anilibria', // текущий выбранный источник
+  manualVideoUrl: null,         // для ручной ссылки
+  episodeCache: {},             // кэш ссылок по ключу "title-episode"
 };
 
 // ---------- FALLBACK СПИСОК АНИМЕ ----------
@@ -41,7 +40,6 @@ function loadState() {
       STATE.userLists = parsed.userLists || {};
       STATE.avatars = parsed.avatars || {};
       STATE.theme = parsed.theme || 'light';
-      STATE.anilibriaId = parsed.anilibriaId || null;
       if (parsed.currentUser) STATE.currentUser = parsed.currentUser;
     }
   } catch (e) { console.warn('Ошибка загрузки состояния', e); }
@@ -52,7 +50,6 @@ function saveState() {
       userLists: STATE.userLists,
       avatars: STATE.avatars,
       theme: STATE.theme,
-      anilibriaId: STATE.anilibriaId,
       currentUser: STATE.currentUser,
     }));
   } catch (e) { console.warn('Ошибка сохранения состояния', e); }
@@ -161,115 +158,84 @@ async function fetchAnimeById(id) {
   }
 }
 
-// ---------- ТРАНСЛИТЕРАЦИЯ (для ссылок) ----------
-function transliterate(word) {
-  const map = {
-    'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z',
-    'и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r',
-    'с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'c','ч':'ch','ш':'sh','щ':'shch',
-    'ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya'
-  };
-  return word.toLowerCase().split('').map(ch => map[ch] || ch).join('').replace(/[^a-z0-9]/g, '');
-}
+// ---------- ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ ВИДЕО (С ПАРСИНГОМ) ----------
+// Используем публичный CORS-прокси для обхода ограничений браузера
+// Если прокси не работает, замените на свой или используйте ручной ввод
+const CORS_PROXY = 'https://corsproxy.io/';
 
-// ---------- ANILIBRIA API (v1) ----------
-const ANILIBRIA_API = 'https://api.anilibria.top/v1';
-
-function generateSearchVariants(titleObj) {
-  const variants = [];
-  if (titleObj.romaji) variants.push(titleObj.romaji);
-  if (titleObj.english) variants.push(titleObj.english);
-  if (titleObj.native) variants.push(titleObj.native);
-  if (titleObj.romaji) {
-    const clean = titleObj.romaji.replace(/[^a-zA-Z0-9 ]/g, '').trim();
-    if (clean && !variants.includes(clean)) variants.push(clean);
+async function getVideoUrl(animeTitle, episode) {
+  // Проверяем кэш
+  const cacheKey = `${animeTitle}-${episode}`.toLowerCase();
+  if (STATE.episodeCache[cacheKey]) {
+    console.log('Используем кэш для', cacheKey);
+    return STATE.episodeCache[cacheKey];
   }
-  const words = titleObj.romaji ? titleObj.romaji.split(' ') : [];
-  if (words.length > 1) {
-    if (words.length >= 2) {
-      variants.push(words.slice(0, 2).join(' '));
-      variants.push(words.slice(-2).join(' '));
-    }
-    variants.push(words.join(' '));
-  }
-  return [...new Set(variants)];
-}
 
-async function searchAnilibriaTitle(titleObj) {
-  const variants = generateSearchVariants(titleObj);
-  for (const query of variants) {
-    if (!query) continue;
-    try {
-      const url = `${ANILIBRIA_API}/searchTitles?search=${encodeURIComponent(query)}&limit=1`;
-      const resp = await fetch(url);
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      if (data && data.length > 0) return data[0];
-    } catch (e) { continue; }
-  }
-  return null;
-}
+  // Формируем слаг (часть URL) из названия аниме
+  const slug = animeTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
-async function getAnilibriaTitleById(id) {
+  // URL страницы на anitaku.to
+  const pageUrl = `https://anitaku.to/${slug}-episode-${episode}`;
+  console.log('Запрос страницы:', pageUrl);
+
   try {
-    const url = `${ANILIBRIA_API}/getTitle?id=${id}`;
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch (e) {
-    console.warn('Ошибка получения тайтла:', e);
+    // Делаем запрос через прокси
+    const response = await fetch(`${CORS_PROXY}${pageUrl}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Ищем атрибут data-video или iframe src в странице
+    // Вариант 1: data-video="https://vibeplayer.site/embed/..."
+    let match = html.match(/data-video="([^"]+)"/);
+    if (match) {
+      const videoUrl = match[1];
+      STATE.episodeCache[cacheKey] = videoUrl;
+      console.log('Найдено видео через data-video:', videoUrl);
+      return videoUrl;
+    }
+
+    // Вариант 2: если data-video нет, ищем iframe с плеером
+    match = html.match(/<iframe[^>]+src="([^"]+)"[^>]*>/);
+    if (match && match[1].includes('vibeplayer') || match[1].includes('gogoanime')) {
+      const videoUrl = match[1];
+      STATE.episodeCache[cacheKey] = videoUrl;
+      console.log('Найдено видео через iframe:', videoUrl);
+      return videoUrl;
+    }
+
+    // Если ничего не нашли, пробуем альтернативный плеер (если есть)
+    // Иногда ссылка на плеер лежит в атрибуте data-player
+    match = html.match(/data-player="([^"]+)"/);
+    if (match) {
+      const videoUrl = match[1];
+      STATE.episodeCache[cacheKey] = videoUrl;
+      console.log('Найдено видео через data-player:', videoUrl);
+      return videoUrl;
+    }
+
+    console.warn('Не удалось найти ссылку на видео на странице');
+    return null;
+  } catch (error) {
+    console.error('Ошибка при получении видео:', error);
     return null;
   }
 }
 
-async function getAnilibriaEpisodes(animeTitle, manualId = null) {
-  let titleData = null;
-  if (manualId) {
-    const fullData = await getAnilibriaTitleById(manualId);
-    if (fullData) titleData = fullData;
-  }
-  if (!titleData) {
-    const found = await searchAnilibriaTitle(animeTitle);
-    if (!found) return null;
-    const fullData = await getAnilibriaTitleById(found.id);
-    if (!fullData) return null;
-    titleData = fullData;
-  }
-  if (!titleData.player || !titleData.player.list) return null;
-  const list = titleData.player.list;
-  const episodes = Object.keys(list).map(key => {
-    const ep = list[key];
-    return { episode: ep.episode, name: ep.name || null, hls: ep.hls || null };
-  }).sort((a, b) => a.episode - b.episode);
-  return {
-    episodes: episodes,
-    host: titleData.player.host || null,
-    title: titleData,
-    voices: titleData.team?.voice || ['Студийная Банда'],
-  };
-}
-
-// ---------- ФУНКЦИИ ДЛЯ ДРУГИХ ИСТОЧНИКОВ ----------
-function generateKinoboxUrl(title, episode) {
-  const slug = transliterate(title).replace(/\s+/g, '-');
-  return `https://kinobox.tv/embed/${slug}-episode-${episode}`;
-}
-
-function generateVidsrcMeUrl(title, episode) {
-  const slug = transliterate(title).replace(/\s+/g, '-');
-  return `https://vidsrc.me/embed/${slug}-episode-${episode}`;
-}
-
-function generateVidsrcToUrl(title, episode) {
-  const slug = transliterate(title).replace(/\s+/g, '-');
-  return `https://vidsrc.to/embed/${slug}-episode-${episode}`;
-}
-
 // ---------- ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ ВИДЕО ----------
-function loadVideo(anime, episode, source) {
+async function loadVideo(anime, episode) {
   const iframe = $('#playerIframe');
   if (!iframe) return;
-  const title = anime.title.romaji || anime.title.english || anime.title.native || '';
 
   // Если есть ручная ссылка – используем её
   if (STATE.manualVideoUrl) {
@@ -277,53 +243,28 @@ function loadVideo(anime, episode, source) {
     return;
   }
 
-  if (source === 'kinobox') {
-    iframe.src = generateKinoboxUrl(title, episode);
-    console.log('Kinobox URL:', iframe.src);
-    return;
-  }
-  if (source === 'vidsrcme') {
-    iframe.src = generateVidsrcMeUrl(title, episode);
-    console.log('Vidsrc.me URL:', iframe.src);
-    return;
-  }
-  if (source === 'vidsrcto') {
-    iframe.src = generateVidsrcToUrl(title, episode);
-    console.log('Vidsrc.to URL:', iframe.src);
-    return;
-  }
+  // Получаем название для поиска
+  const title = anime.title.romaji || anime.title.english || anime.title.native || '';
 
-  // AniLibria (по умолчанию)
-  const data = STATE._anilibriaData;
-  if (!data) {
-    iframe.src = '';
-    return;
+  // Показываем индикатор загрузки в плеере
+  iframe.src = '';
+  const loadingMsg = document.getElementById('loadingMessage');
+  if (loadingMsg) loadingMsg.style.display = 'block';
+
+  // Пытаемся получить ссылку на видео
+  const videoUrl = await getVideoUrl(title, episode);
+
+  if (loadingMsg) loadingMsg.style.display = 'none';
+
+  if (videoUrl) {
+    iframe.src = videoUrl;
+  } else {
+    // Если не удалось, показываем сообщение и предлагаем ручной ввод
+    alert('Не удалось загрузить видео автоматически. Попробуйте вставить ссылку вручную (кнопка "Вставить ссылку").');
+    // Переключаемся на ручной режим
+    const manualTab = document.querySelector('.source-tab[data-source="manual"]');
+    if (manualTab) manualTab.click();
   }
-  const epData = data.episodes.find(e => e.episode === episode);
-  if (!epData || !epData.hls) {
-    iframe.src = '';
-    alert(`Серия ${episode} не найдена на AniLibria`);
-    return;
-  }
-  const qualityMenu = document.getElementById('qualityMenu');
-  let qualityKey = qualityMenu && qualityMenu.value ? qualityMenu.value : 'fhd';
-  const hls = epData.hls;
-  let url = hls[qualityKey];
-  if (!url) {
-    const keys = ['fhd', 'hd', 'sd'];
-    for (const k of keys) {
-      if (hls[k]) { url = hls[k]; break; }
-    }
-  }
-  if (!url) {
-    iframe.src = '';
-    alert(`Нет доступного видео для серии ${episode}`);
-    return;
-  }
-  const host = data.host || 'cache.libria.fun';
-  const fullUrl = `https://${host}${url}`;
-  iframe.src = fullUrl;
-  console.log('AniLibria URL:', fullUrl);
 }
 
 // ---------- РЕНДЕРИНГ ----------
@@ -421,9 +362,7 @@ async function openAnimeDetail(id) {
     }
     STATE.selectedAnime = anime;
     STATE.selectedEpisode = 1;
-    STATE._anilibriaData = null;
-    STATE.manualVideoUrl = null;
-    STATE.currentSource = 'anilibria'; // по умолчанию
+    STATE.manualVideoUrl = null; // сбрасываем ручную ссылку
     renderAnimeDetail(anime);
   } catch (e) {
     container.innerHTML = `<div class="loading">Ошибка: ${e.message}</div>`;
@@ -445,54 +384,35 @@ function renderAnimeDetail(anime) {
           <h2>${title}</h2>
           <p>${description}</p>
           <div class="genres">${genres.map(g => `<span>${g}</span>`).join('')}</div>
-          <p>⭐ ${anime.averageScore || '?'}% · ${anime.status || 'Неизвестно'} · <span id="episodesCount">${totalEpisodes}</span> серий</p>
+          <p>⭐ ${anime.averageScore || '?'}% · ${anime.status || 'Неизвестно'} · ${totalEpisodes} серий</p>
           <button id="backToHome">← На главную</button>
         </div>
       </div>
       <div class="player-section">
         <h3>Выбор серии</h3>
-        <div id="episodeListContainer" class="episode-list">
-          <!-- Сюда будут добавлены кнопки серий -->
+        <div id="episodeListContainer" class="episode-list"></div>
+
+        <div id="sourceTabs" style="display:flex; gap:0.5rem; flex-wrap:wrap; margin:1rem 0;">
+          <button class="source-tab active-tab" data-source="auto">▶ Автопоиск</button>
+          <button class="source-tab" data-source="manual">🔗 Ссылка</button>
         </div>
-        <div class="player-controls" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
-          <div class="quality-selector">
-            <label for="qualityMenu">Качество:</label>
-            <select id="qualityMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color); display:none;">
-              <option value="">Авто</option>
-            </select>
-          </div>
-          <div class="voice-selector">
-            <label for="voiceMenu">Озвучка:</label>
-            <select id="voiceMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color); display:none;">
-              <option value="">Студийная Банда</option>
-            </select>
-          </div>
-        </div>
-        <div id="sourceTabs" style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem;">
-          <button class="source-tab active-tab" data-source="anilibria">AniLibria</button>
-          <button class="source-tab" data-source="kinobox">Kinobox</button>
-          <button class="source-tab" data-source="vidsrcme">Vidsrc.me</button>
-          <button class="source-tab" data-source="vidsrcto">Vidsrc.to</button>
-          <button class="source-tab" data-source="manual">Ручная ссылка</button>
-        </div>
+
         <div id="manualControls" style="margin-bottom:1rem; display:none;">
           <div style="display:flex; gap:0.8rem; flex-wrap:wrap; align-items:center;">
-            <input type="number" id="manualIdInput" placeholder="Введите ID тайтла AniLibria" style="flex:1; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-input); color:var(--text-primary);" />
-            <button id="manualIdLoadBtn" style="background:var(--accent); color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Загрузить по ID</button>
-            <button id="manualUrlBtn" style="background:#10b981; color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Вставить ссылку</button>
-          </div>
-          <div id="manualUrlInput" style="display:none; margin-top:0.5rem;">
-            <input type="text" id="manualUrlField" placeholder="Введите прямую ссылку на видео (iframe)" style="flex:1; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-input); color:var(--text-primary); width:100%;" />
-            <button id="manualUrlApplyBtn" style="margin-top:0.5rem; background:#10b981; color:white; border:none; padding:0.3rem 1rem; border-radius:20px;">Применить</button>
+            <input type="text" id="manualUrlInput" placeholder="Вставьте ссылку на видео (iframe)" style="flex:1; padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border-color); background:var(--bg-input); color:var(--text-primary);" />
+            <button id="manualUrlApplyBtn" style="background:#10b981; color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Применить</button>
+            <button id="manualUrlClearBtn" style="background:#ef4444; color:white; border:none; padding:0.5rem 1rem; border-radius:20px;">Очистить</button>
           </div>
         </div>
+
         <div id="playerContent">
           <div class="video-container" id="videoContainer">
+            <div id="loadingMessage" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; font-size:1.2rem; z-index:10;">Поиск видео...</div>
             <iframe id="playerIframe" src="" allowfullscreen></iframe>
           </div>
         </div>
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
-          🎬 Выберите источник. Если видео не загружается, попробуйте другой или вставьте ссылку вручную.
+          🎬 Автоматический поиск через anitaku.to (Gogoanime). Если не работает – вставьте ссылку вручную.
         </p>
       </div>
     </div>
@@ -503,73 +423,73 @@ function renderAnimeDetail(anime) {
   $('#backToHome')?.addEventListener('click', () => {
     STATE.selectedAnime = null;
     STATE.searchQuery = '';
-    STATE._anilibriaData = null;
     renderHome();
   });
 
-  // Обработчики вкладок источников
-  const sourceTabs = document.querySelectorAll('.source-tab');
-  sourceTabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      sourceTabs.forEach(t => t.classList.remove('active-tab'));
-      tab.classList.add('active-tab');
-      const source = tab.dataset.source;
-      STATE.currentSource = source;
-      const manualControls = document.getElementById('manualControls');
-      const qualityMenu = document.getElementById('qualityMenu');
-      const voiceMenu = document.getElementById('voiceMenu');
-      if (source === 'manual') {
-        manualControls.style.display = 'block';
-        qualityMenu.style.display = 'none';
-        voiceMenu.style.display = 'none';
-        // Очищаем iframe
-        const iframe = $('#playerIframe');
-        if (iframe) iframe.src = '';
-        STATE.manualVideoUrl = null;
-        return;
+  // Генерируем кнопки серий
+  const epContainer = document.getElementById('episodeListContainer');
+  let epHtml = '';
+  for (let i = 1; i <= totalEpisodes; i++) {
+    epHtml += `<button class="${i === STATE.selectedEpisode ? 'active-ep' : ''}" data-ep="${i}">${i}</button>`;
+  }
+  epContainer.innerHTML = epHtml;
+
+  // Обработчики кликов по сериям
+  epContainer.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ep = parseInt(btn.dataset.ep);
+      STATE.selectedEpisode = ep;
+      epContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
+      btn.classList.add('active-ep');
+      // Загружаем видео
+      const activeTab = document.querySelector('.source-tab.active-tab');
+      const source = activeTab ? activeTab.dataset.source : 'auto';
+      if (source === 'auto') {
+        loadVideo(anime, ep);
       } else {
-        manualControls.style.display = 'none';
-        if (source === 'anilibria') {
-          qualityMenu.style.display = 'inline-block';
-          voiceMenu.style.display = 'inline-block';
-        } else {
-          qualityMenu.style.display = 'none';
-          voiceMenu.style.display = 'none';
-        }
-        // Загружаем видео с текущим источником
-        const anime = STATE.selectedAnime;
-        if (anime) {
-          loadVideo(anime, STATE.selectedEpisode, source);
+        // Если ручной режим, но ссылка уже была вставлена, то она уже в iframe
+        // Ничего не делаем, если ссылка уже установлена
+        if (!STATE.manualVideoUrl) {
+          alert('Вставьте ссылку вручную или переключитесь на автопоиск');
         }
       }
     });
   });
 
-  // Обработчики ручного ввода
-  const manualIdInput = document.getElementById('manualIdInput');
-  const manualIdLoadBtn = document.getElementById('manualIdLoadBtn');
-  const manualUrlBtn = document.getElementById('manualUrlBtn');
+  // Обработчики вкладок
+  const sourceTabs = document.querySelectorAll('.source-tab');
+  const manualControls = document.getElementById('manualControls');
+  sourceTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      sourceTabs.forEach(t => t.classList.remove('active-tab'));
+      tab.classList.add('active-tab');
+      const source = tab.dataset.source;
+      if (source === 'manual') {
+        manualControls.style.display = 'block';
+        // Очищаем iframe, если там была авто-ссылка
+        const iframe = $('#playerIframe');
+        if (iframe && !STATE.manualVideoUrl) {
+          iframe.src = '';
+        }
+      } else {
+        manualControls.style.display = 'none';
+        // Если был ручной режим и ссылка вставлена, оставляем её
+        // Если нет – загружаем автоматически
+        if (!STATE.manualVideoUrl) {
+          const anime = STATE.selectedAnime;
+          if (anime) loadVideo(anime, STATE.selectedEpisode);
+        }
+      }
+    });
+  });
+
+  // Ручной ввод
   const manualUrlInput = document.getElementById('manualUrlInput');
-  const manualUrlField = document.getElementById('manualUrlField');
   const manualUrlApplyBtn = document.getElementById('manualUrlApplyBtn');
-
-  manualIdLoadBtn?.addEventListener('click', () => {
-    const id = parseInt(manualIdInput.value.trim());
-    if (!id || isNaN(id)) {
-      alert('Введите корректный ID (число)');
-      return;
-    }
-    STATE.anilibriaId = id;
-    saveState();
-    loadAnilibriaData(anime, id);
-  });
-
-  manualUrlBtn?.addEventListener('click', () => {
-    manualUrlInput.style.display = manualUrlInput.style.display === 'none' ? 'block' : 'none';
-  });
+  const manualUrlClearBtn = document.getElementById('manualUrlClearBtn');
 
   manualUrlApplyBtn?.addEventListener('click', () => {
-    const url = manualUrlField.value.trim();
+    const url = manualUrlInput.value.trim();
     if (!url) {
       alert('Введите ссылку');
       return;
@@ -577,167 +497,27 @@ function renderAnimeDetail(anime) {
     STATE.manualVideoUrl = url;
     const iframe = $('#playerIframe');
     if (iframe) iframe.src = url;
-    manualUrlInput.style.display = 'none';
+    // Переключаем на ручной режим, если ещё не активен
+    const manualTab = document.querySelector('.source-tab[data-source="manual"]');
+    if (manualTab && !manualTab.classList.contains('active-tab')) {
+      manualTab.click();
+    }
   });
 
-  // Генерируем кнопки серий на основе totalEpisodes (для всех источников, кроме AniLibria)
-  generateEpisodeButtons(totalEpisodes, anime);
-
-  // Загружаем данные AniLibria (по умолчанию)
-  loadAnilibriaData(anime, STATE.anilibriaId);
-}
-
-// Генерация кнопок серий (используется для всех источников)
-function generateEpisodeButtons(totalEpisodes, anime) {
-  const container = document.getElementById('episodeListContainer');
-  if (!container) return;
-  let epHtml = '';
-  for (let i = 1; i <= totalEpisodes; i++) {
-    epHtml += `<button class="${i === STATE.selectedEpisode ? 'active-ep' : ''}" data-ep="${i}">${i}</button>`;
-  }
-  container.innerHTML = epHtml;
-
-  container.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const ep = parseInt(btn.dataset.ep);
-      STATE.selectedEpisode = ep;
-      container.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
-      btn.classList.add('active-ep');
-      // Загружаем с текущим активным источником
-      const activeTab = document.querySelector('.source-tab.active-tab');
-      const source = activeTab ? activeTab.dataset.source : 'anilibria';
-      loadVideo(anime, ep, source);
-    });
-  });
-}
-
-// Загрузка данных AniLibria (обновляет кнопки серий и меню качества/озвучки)
-async function loadAnilibriaData(anime, manualId = null) {
-  const episodeListContainer = document.getElementById('episodeListContainer');
-  const manualControls = document.getElementById('manualControls');
-  if (!episodeListContainer) return;
-
-  // Показываем индикатор загрузки
-  episodeListContainer.innerHTML = '<div class="loading" style="padding:0.5rem;">Загрузка серий с AniLibria...</div>';
-  manualControls.style.display = 'none';
-
-  let data = await getAnilibriaEpisodes(anime.title, manualId);
-  if (!data && STATE.anilibriaId && !manualId) {
-    data = await getAnilibriaEpisodes(anime.title, STATE.anilibriaId);
-  }
-
-  if (!data || !data.episodes || data.episodes.length === 0) {
-    // Не удалось загрузить AniLibria – показываем сообщение, но кнопки серий уже есть (из AniList)
-    episodeListContainer.innerHTML = `
-      <div style="color:var(--text-secondary); padding:0.5rem; width:100%;">
-        ⚠️ Не удалось загрузить серии с AniLibria. Используйте другие источники или введите ID вручную.
-      </div>
-    `;
-    // Показываем ручные контролы
-    manualControls.style.display = 'block';
-    // Обновляем кнопки серий (уже есть из generateEpisodeButtons)
-    // Но их нужно перегенерировать, так как они могли быть затерты
-    const totalEpisodes = anime.episodes || 12;
-    generateEpisodeButtons(totalEpisodes, anime);
-    return;
-  }
-
-  // Сохраняем данные AniLibria
-  STATE._anilibriaData = data;
-
-  // Обновляем количество серий
-  const episodesCountSpan = document.getElementById('episodesCount');
-  if (episodesCountSpan) {
-    episodesCountSpan.textContent = data.episodes.length;
-  }
-
-  // Генерируем кнопки серий из данных AniLibria
-  let epHtml = '';
-  const maxEp = data.episodes.length;
-  for (let i = 1; i <= maxEp; i++) {
-    const ep = data.episodes.find(e => e.episode === i);
-    if (ep) {
-      epHtml += `<button class="${i === STATE.selectedEpisode ? 'active-ep' : ''}" data-ep="${i}">${i}</button>`;
-    }
-  }
-  episodeListContainer.innerHTML = epHtml;
-
-  episodeListContainer.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const ep = parseInt(btn.dataset.ep);
-      STATE.selectedEpisode = ep;
-      episodeListContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
-      btn.classList.add('active-ep');
-      const activeTab = document.querySelector('.source-tab.active-tab');
-      const source = activeTab ? activeTab.dataset.source : 'anilibria';
-      loadVideo(anime, ep, source);
-    });
+  manualUrlClearBtn?.addEventListener('click', () => {
+    STATE.manualVideoUrl = null;
+    const iframe = $('#playerIframe');
+    if (iframe) iframe.src = '';
+    manualUrlInput.value = '';
+    // Переключаем на автопоиск
+    const autoTab = document.querySelector('.source-tab[data-source="auto"]');
+    if (autoTab) autoTab.click();
   });
 
-  // Если текущая выбранная серия есть в данных, активируем её
-  if (data.episodes.some(e => e.episode === STATE.selectedEpisode)) {
-    const activeBtn = episodeListContainer.querySelector(`button[data-ep="${STATE.selectedEpisode}"]`);
-    if (activeBtn) {
-      episodeListContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
-      activeBtn.classList.add('active-ep');
-    }
-  } else if (data.episodes.length > 0) {
-    // Иначе выбираем первую
-    STATE.selectedEpisode = data.episodes[0].episode;
-    const firstBtn = episodeListContainer.querySelector(`button[data-ep="${STATE.selectedEpisode}"]`);
-    if (firstBtn) {
-      episodeListContainer.querySelectorAll('button').forEach(b => b.classList.remove('active-ep'));
-      firstBtn.classList.add('active-ep');
-    }
+  // Если автопоиск – загружаем первую серию
+  if (document.querySelector('.source-tab.active-tab')?.dataset.source === 'auto') {
+    loadVideo(anime, STATE.selectedEpisode);
   }
-
-  // Загружаем видео с текущим источником (если активен AniLibria)
-  const activeTab = document.querySelector('.source-tab.active-tab');
-  const currentSource = activeTab ? activeTab.dataset.source : 'anilibria';
-  if (currentSource === 'anilibria') {
-    loadVideo(anime, STATE.selectedEpisode, 'anilibria');
-  }
-
-  // Заполняем меню качества
-  const qualityMenu = document.getElementById('qualityMenu');
-  if (qualityMenu && qualityMenu.options.length === 0) {
-    const firstEp = data.episodes[0];
-    if (firstEp && firstEp.hls) {
-      const hls = firstEp.hls;
-      const qualityMap = { fhd: 'FHD (1080p)', hd: 'HD (720p)', sd: 'SD (480p)' };
-      const order = ['fhd', 'hd', 'sd'];
-      order.forEach(key => {
-        if (hls[key]) {
-          const opt = document.createElement('option');
-          opt.value = key;
-          opt.textContent = qualityMap[key] || key.toUpperCase();
-          qualityMenu.appendChild(opt);
-        }
-      });
-      if (qualityMenu.options.length > 0) {
-        qualityMenu.value = 'fhd';
-        qualityMenu.style.display = 'inline-block';
-        qualityMenu.onchange = () => {
-          const activeTab2 = document.querySelector('.source-tab.active-tab');
-          const src = activeTab2 ? activeTab2.dataset.source : 'anilibria';
-          loadVideo(anime, STATE.selectedEpisode, src);
-        };
-      }
-    }
-  }
-  const voiceMenu = document.getElementById('voiceMenu');
-  if (voiceMenu && voiceMenu.options.length === 0 && data.voices) {
-    data.voices.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = v;
-      voiceMenu.appendChild(opt);
-    });
-    voiceMenu.style.display = 'inline-block';
-  }
-
-  // Скрываем ручные контролы, если данные загружены
-  manualControls.style.display = 'none';
 }
 
 // ---------- ПРОФИЛЬ ----------
@@ -760,7 +540,6 @@ function renderProfile() {
         </div>
         <div style="display:flex; gap:0.8rem; flex-wrap:wrap; margin-top:0.5rem;">
           <button id="changeAvatarBtn">📷 Сменить аватар</button>
-          <button id="clearAnilibriaIdBtn">🗑️ Сбросить ID AniLibria</button>
         </div>
       </div>
     </div>
@@ -775,12 +554,6 @@ function renderProfile() {
 
   $('#profileAvatar')?.addEventListener('click', () => openAvatarModal());
   $('#changeAvatarBtn')?.addEventListener('click', () => openAvatarModal());
-  $('#clearAnilibriaIdBtn')?.addEventListener('click', () => {
-    STATE.anilibriaId = null;
-    saveState();
-    alert('ID AniLibria сброшен');
-    renderCurrentPage();
-  });
 
   container.querySelectorAll('.profile-tabs button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -818,7 +591,7 @@ async function renderProfileList(type) {
   }
 }
 
-// ---------- МОДАЛКИ (авторизация, аватарка, тема) ----------
+// ---------- МОДАЛКИ ----------
 const authModal = $('#authModal');
 const authForm = $('#authForm');
 let isLoginMode = true;
@@ -954,7 +727,7 @@ $('#homeLink')?.addEventListener('click', (e) => {
   STATE.currentPage = 'home';
   STATE.selectedAnime = null;
   STATE.searchQuery = '';
-  STATE._anilibriaData = null;
+  STATE.episodeCache = {}; // сброс кэша
   renderCurrentPage();
 });
 
@@ -963,7 +736,6 @@ $('#profileLink')?.addEventListener('click', (e) => {
   if (!STATE.currentUser) { alert('Войдите в аккаунт'); return; }
   STATE.currentPage = 'profile';
   STATE.selectedAnime = null;
-  STATE._anilibriaData = null;
   renderCurrentPage();
 });
 
@@ -974,7 +746,7 @@ $('#logoutBtn')?.addEventListener('click', () => {
   STATE.currentPage = 'home';
   STATE.selectedAnime = null;
   STATE.searchQuery = '';
-  STATE._anilibriaData = null;
+  STATE.episodeCache = {};
   renderCurrentPage();
   updateUI();
 });
@@ -992,7 +764,7 @@ searchBtn?.addEventListener('click', () => {
     STATE.searchQuery = query;
     STATE.currentPage = 'home';
     STATE.selectedAnime = null;
-    STATE._anilibriaData = null;
+    STATE.episodeCache = {};
     renderCurrentPage();
   } else {
     alert('Введите название для поиска');
@@ -1008,7 +780,7 @@ clearSearchBtn?.addEventListener('click', () => {
   searchInput.value = '';
   STATE.currentPage = 'home';
   STATE.selectedAnime = null;
-  STATE._anilibriaData = null;
+  STATE.episodeCache = {};
   renderCurrentPage();
 });
 
@@ -1017,4 +789,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с AniLibria, Kinobox, Vidsrc.me, Vidsrc.to и ручным вводом');
+console.log('AniList App с плеером от anitaku.to (vibeplayer.site)');
