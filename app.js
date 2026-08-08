@@ -210,39 +210,71 @@ function generateAniboomUrls(title, episode) {
   ];
 }
 
-// ---------- ANILIBRIA API (НОВЫЙ ИСТОЧНИК) ----------
-const ANILIBRIA_API = 'https://api.anilibria.tv/v2';
+// ---------- ANILIBRIA API (НОВАЯ ВЕРСИЯ) ----------
+const ANILIBRIA_API = 'https://api.anilibria.top/v1';
 
-async function getAnilibriaTitle(title) {
+// Поиск тайтла по названию (несколько попыток с разными вариантами)
+async function searchAnilibriaTitle(title) {
+  // Собираем варианты названий
+  const variants = [];
+  if (title.romaji) variants.push(title.romaji);
+  if (title.english) variants.push(title.english);
+  if (title.native) variants.push(title.native);
+  // Добавляем очищенный romaji (без спецсимволов)
+  if (title.romaji) {
+    const clean = title.romaji.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+    if (clean && !variants.includes(clean)) variants.push(clean);
+  }
+  // Убираем дубли
+  const uniqueVariants = [...new Set(variants)];
+
+  for (const query of uniqueVariants) {
+    try {
+      const url = `${ANILIBRIA_API}/searchTitles?search=${encodeURIComponent(query)}&limit=1`;
+      const resp = await fetch(url);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data && data.length > 0) {
+        return data[0]; // возвращаем первый найденный тайтл
+      }
+    } catch (e) {
+      console.warn(`Ошибка поиска на AniLibria по запросу "${query}":`, e);
+    }
+  }
+  return null;
+}
+
+// Получение полной информации о тайтле по ID
+async function getAnilibriaTitleById(id) {
   try {
-    const searchResp = await fetch(`${ANILIBRIA_API}/getTitle?search=${encodeURIComponent(title)}`);
-    if (!searchResp.ok) return null;
-    const data = await searchResp.json();
-    if (!data || data.length === 0) return null;
-    return data[0];
+    const url = `${ANILIBRIA_API}/getTitle?id=${id}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    return await resp.json();
   } catch (e) {
-    console.warn('AniLibria API error:', e);
+    console.warn('Ошибка получения тайтла AniLibria:', e);
     return null;
   }
 }
 
-async function getAnilibriaEpisode(title, episode) {
-  try {
-    const titleData = await getAnilibriaTitle(title);
-    if (!titleData) return null;
-    const id = titleData.id;
-    const resp = await fetch(`${ANILIBRIA_API}/getTitle?id=${id}`);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (!data || !data.player || !data.player.playlist) return null;
-    const playlist = data.player.playlist;
-    const epData = playlist.find(p => p.episode === episode);
-    if (!epData) return null;
-    return epData;
-  } catch (e) {
-    console.warn('AniLibria episode error:', e);
-    return null;
-  }
+// Получение данных о конкретной серии
+async function getAnilibriaEpisode(animeTitle, episode) {
+  // Сначала ищем тайтл
+  const titleData = await searchAnilibriaTitle(animeTitle);
+  if (!titleData) return null;
+  // Получаем детали
+  const fullData = await getAnilibriaTitleById(titleData.id);
+  if (!fullData || !fullData.player || !fullData.player.playlist) return null;
+  // Ищем нужную серию в плейлисте
+  const playlist = fullData.player.playlist;
+  const epData = playlist.find(p => p.episode === episode);
+  if (!epData) return null;
+  // Возвращаем данные серии вместе с информацией об озвучках (если есть)
+  return {
+    videos: epData.videos || {},
+    voices: fullData.voices || ['Студийная Банда'],
+    title: fullData,
+  };
 }
 
 // ---------- ПОИСК ВИДЕО (YouTube, VK) ----------
@@ -300,7 +332,8 @@ function getYouTubeSearchUrl(query) {
 async function loadVideo(anime, episode, source = 'auto') {
   const iframe = $('#playerIframe');
   if (!iframe) return;
-  const title = anime.title.romaji || anime.title.english || anime.title.native || '';
+  const titleObj = anime.title;
+  const title = titleObj.romaji || titleObj.english || titleObj.native || '';
   const query = `${title} серия ${episode} аниме`;
 
   if (source === 'manual') {
@@ -323,11 +356,12 @@ async function loadVideo(anime, episode, source = 'auto') {
     }
   }
 
-  // НОВЫЙ ИСТОЧНИК: AniLibria
+  // НОВЫЙ ИСТОЧНИК: AniLibria (через актуальное API)
   if (source === 'anilibria') {
-    const epData = await getAnilibriaEpisode(title, episode);
+    const epData = await getAnilibriaEpisode(titleObj, episode);
     if (epData && epData.videos) {
       const videos = epData.videos;
+      // Выбираем приоритет: hls (адаптивный) > fhd > hd > sd
       const videoSrc = videos.hls || videos.fhd || videos.hd || videos.sd;
       if (videoSrc) {
         iframe.src = videoSrc;
@@ -335,12 +369,18 @@ async function loadVideo(anime, episode, source = 'auto') {
         const qualityMenu = document.getElementById('qualityMenu');
         if (qualityMenu) {
           qualityMenu.innerHTML = '';
-          const qualities = ['fhd', 'hd', 'sd'];
-          qualities.forEach(q => {
-            if (videos[q]) {
+          const qualityMap = {
+            fhd: 'FHD (1080p)',
+            hd: 'HD (720p)',
+            sd: 'SD (480p)',
+            hls: 'Адаптивное (HLS)'
+          };
+          const order = ['hls', 'fhd', 'hd', 'sd'];
+          order.forEach(key => {
+            if (videos[key]) {
               const opt = document.createElement('option');
-              opt.value = videos[q];
-              opt.textContent = q.toUpperCase();
+              opt.value = videos[key];
+              opt.textContent = qualityMap[key] || key.toUpperCase();
               qualityMenu.appendChild(opt);
             }
           });
@@ -348,8 +388,9 @@ async function loadVideo(anime, episode, source = 'auto') {
           qualityMenu.onchange = () => {
             iframe.src = qualityMenu.value;
           };
+          qualityMenu.style.display = 'inline-block';
         }
-        // Заполняем меню озвучки (если есть данные)
+        // Заполняем меню озвучки
         const voiceMenu = document.getElementById('voiceMenu');
         if (voiceMenu) {
           voiceMenu.innerHTML = '';
@@ -361,14 +402,16 @@ async function loadVideo(anime, episode, source = 'auto') {
             voiceMenu.appendChild(opt);
           });
           voiceMenu.onchange = () => {
+            // Здесь можно было бы перезагрузить видео с другой озвучкой, но это требует дополнительного запроса
             alert(`Выбрана озвучка: ${voiceMenu.value}`);
-            // Здесь можно было бы перезагрузить видео с другой озвучкой, но для простоты просто уведомление
           };
+          voiceMenu.style.display = 'inline-block';
         }
         return;
       }
     }
-    alert('Не удалось загрузить видео с AniLibria. Попробуйте другой источник.');
+    // Если не удалось загрузить — показываем сообщение и предлагаем другие источники
+    alert('Не удалось загрузить видео с AniLibria. Попробуйте другой источник (YouTube, VK, Jut.su и т.д.)');
     return;
   }
 
@@ -567,13 +610,13 @@ function renderAnimeDetail(anime) {
         <div class="player-controls" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
           <div class="quality-selector">
             <label for="qualityMenu">Качество:</label>
-            <select id="qualityMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color);">
+            <select id="qualityMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color); display:none;">
               <option value="">Авто</option>
             </select>
           </div>
           <div class="voice-selector">
             <label for="voiceMenu">Озвучка:</label>
-            <select id="voiceMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color);">
+            <select id="voiceMenu" style="padding:0.3rem 0.8rem; border-radius:20px; background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color); display:none;">
               <option value="">Студийная Банда</option>
             </select>
           </div>
@@ -642,11 +685,11 @@ function renderAnimeDetail(anime) {
         if (variants) variants.remove();
         const googleBtn = manualArea.querySelector('.google-search-btn');
         if (googleBtn) googleBtn.remove();
-        // Скрываем меню качества/озвучки
         if (qualityMenu) qualityMenu.style.display = 'none';
         if (voiceMenu) voiceMenu.style.display = 'none';
       } else if (source === 'anilibria') {
         manualArea.style.display = 'none';
+        // Показываем меню качества и озвучки (они заполняются в loadVideo)
         if (qualityMenu) qualityMenu.style.display = 'inline-block';
         if (voiceMenu) voiceMenu.style.display = 'inline-block';
         loadVideo(anime, STATE.selectedEpisode, source);
@@ -975,4 +1018,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App с поддержкой AniLibria и выбором качества/озвучки');
+console.log('AniList App с актуальным AniLibria API');
