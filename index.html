@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Мой плеер ArtPlayer</title>
     <style>
-        /* Стили для страницы и контейнера плеера */
         body {
             margin: 0;
             display: flex;
@@ -23,10 +22,8 @@
             width: 90%;
             max-width: 800px;
         }
-        /* Класс-контейнер для плеера. Важно: задайте размеры! */
         .artplayer-app {
             width: 100%;
-            /* Используем соотношение сторон 16:9 */
             aspect-ratio: 16 / 9;
             background-color: #000;
             border-radius: 8px;
@@ -45,69 +42,80 @@
         .info a:hover {
             text-decoration: underline;
         }
+        /* Стили для блока с iframe (опционально) */
+        .iframe-controls {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .iframe-controls input {
+            width: 70%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .iframe-controls button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .iframe-controls button:hover {
+            background: #0056b3;
+        }
     </style>
 </head>
 <body>
     <div class="player-wrapper">
-        <!-- Это контейнер, в котором будет отрисован плеер -->
+        <!-- Контейнер для ArtPlayer -->
         <div class="artplayer-app" id="player-container"></div>
         <div class="info">
             <strong>ArtPlayer</strong> · 
-            <!-- Здесь можно добавить ссылку на ваше видео -->
             <a href="#" id="video-source-link">Источник видео</a>
+        </div>
+
+        <!-- Блок для вставки iframe-ссылок (например, с playerjs.com) -->
+        <div class="iframe-controls">
+            <input type="text" id="iframe-url-input" placeholder="Вставьте ссылку на видео (MP4, WebM или iframe-ссылку)">
+            <button id="load-video-btn">Загрузить видео</button>
+            <p style="font-size:12px; color:#888; margin-top:5px;">Пример iframe-ссылки: //playerjs.com/player.html?file=//site.com/video.mp4</p>
         </div>
     </div>
 
     <!-- 1. Подключаем ArtPlayer с CDN -->
     <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
 
-    <!-- 2. Наш скрипт для инициализации плеера -->
+    <!-- 2. Наш скрипт для инициализации плеера и управления -->
     <script>
-        // ВАЖНО: ВСТАВЬТЕ СЮДА ВАШУ ССЫЛКУ НА ВИДЕО!
-        // Ссылка должна вести на файл .mp4, .webm или .m3u8 (HLS)
+        // Начальное видео (можно заменить)
         const YOUR_VIDEO_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
 
         // Находим контейнер для плеера
         const container = document.getElementById('player-container');
 
-        // Создаём экземпляр плеера
+        // Создаём экземпляр плеера ArtPlayer
         const art = new Artplayer({
             container: container,
             url: YOUR_VIDEO_URL,
-            // Настройки качества (опционально)
             quality: [
                 {
                     default: true,
                     name: '1080P',
                     url: YOUR_VIDEO_URL,
                 },
-                // Можно добавить другие качества
             ],
-            // Настройки субтитров (опционально)
-            // subtitle: {
-            //     url: 'path/to/subtitle.vtt',
-            //     encoding: 'utf-8',
-            // },
-            // Настройки автозапуска (по умолчанию false)
             autoplay: false,
-            // Настройки управления громкостью
             volume: 0.7,
-            // Настройки скорости воспроизведения
             playbackRate: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
-            // Включаем настройки для мобильных устройств
             setting: true,
-            // Показываем горячие клавиши
             hotkey: true,
-            // Язык интерфейса (ru или en)
             lang: 'ru',
         });
-
-        // Добавляем обработчик для корректного изменения размеров (опционально)
-        // Это может понадобиться, если контейнер меняет размер
-        // window.addEventListener('resize', () => art.resize());
-
-        // Выводим сообщение в консоль, что плеер создан
-        console.log('Плеер ArtPlayer создан:', art);
 
         // Обновляем ссылку в информации (для наглядности)
         const sourceLink = document.getElementById('video-source-link');
@@ -116,6 +124,72 @@
             sourceLink.textContent = YOUR_VIDEO_URL.length > 40 ? YOUR_VIDEO_URL.substring(0, 40) + '...' : YOUR_VIDEO_URL;
             sourceLink.target = '_blank';
         }
+
+        // --- Логика для загрузки нового видео по ссылке (включая iframe) ---
+        const loadButton = document.getElementById('load-video-btn');
+        const urlInput = document.getElementById('iframe-url-input');
+
+        loadButton.addEventListener('click', function() {
+            let newUrl = urlInput.value.trim();
+            if (!newUrl) {
+                alert('Пожалуйста, введите ссылку на видео.');
+                return;
+            }
+
+            // Если ссылка похожа на iframe (содержит playerjs.com или другой плеер), извлекаем параметр file
+            // Иначе используем введённую ссылку как есть
+            let videoUrlToLoad = newUrl;
+
+            // Проверяем, не является ли ссылка iframe-ссылкой от playerjs.com
+            // Ищем параметр file= в URL
+            if (newUrl.includes('playerjs.com') && newUrl.includes('file=')) {
+                try {
+                    // Создаём временный URL, чтобы разобрать параметры
+                    const urlObj = new URL(newUrl.startsWith('//') ? 'https:' + newUrl : newUrl);
+                    const fileParam = urlObj.searchParams.get('file');
+                    if (fileParam) {
+                        videoUrlToLoad = fileParam;
+                        console.log('Извлечена ссылка на видео из iframe:', videoUrlToLoad);
+                    } else {
+                        alert('Не удалось найти параметр file= в iframe-ссылке.');
+                        return;
+                    }
+                } catch (e) {
+                    alert('Ошибка при разборе iframe-ссылки. Убедитесь, что она корректна.');
+                    return;
+                }
+            }
+
+            // Проверяем, что ссылка не пустая и не является просто html-страницей
+            if (!videoUrlToLoad.startsWith('http://') && !videoUrlToLoad.startsWith('https://') && !videoUrlToLoad.startsWith('//')) {
+                alert('Ссылка должна начинаться с http://, https:// или //');
+                return;
+            }
+
+            // Загружаем новое видео в плеер
+            art.switchUrl(videoUrlToLoad);
+
+            // Обновляем информацию внизу
+            if (sourceLink) {
+                sourceLink.href = videoUrlToLoad;
+                sourceLink.textContent = videoUrlToLoad.length > 40 ? videoUrlToLoad.substring(0, 40) + '...' : videoUrlToLoad;
+                sourceLink.target = '_blank';
+            }
+
+            // Очищаем поле ввода
+            urlInput.value = '';
+            console.log('Видео загружено:', videoUrlToLoad);
+        });
+
+        // Добавляем возможность нажатия Enter в поле ввода
+        urlInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                loadButton.click();
+            }
+        });
+
+        // Выводим сообщение в консоль
+        console.log('Плеер ArtPlayer создан. Для загрузки нового видео введите ссылку в поле выше.');
     </script>
 </body>
 </html>
