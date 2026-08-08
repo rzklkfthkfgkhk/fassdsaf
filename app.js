@@ -13,7 +13,7 @@ const STATE = {
   theme: 'light',
 };
 
-// ---------- FALLBACK СПИСОК АНИМЕ (если API не отвечает) ----------
+// ---------- FALLBACK СПИСОК АНИМЕ ----------
 const FALLBACK_ANIME = [
   { id: 1, title: { romaji: 'Re:Zero', english: 'Re:ZERO -Starting Life in Another World-' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21327-CA5bBcIuBSXZ.jpg' }, genres: ['Fantasy', 'Drama'], episodes: 25, status: 'Finished', averageScore: 82 },
   { id: 2, title: { romaji: 'Attack on Titan', english: 'Attack on Titan' }, coverImage: { large: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-PhIKwjqPSOX9.jpg' }, genres: ['Action', 'Fantasy'], episodes: 87, status: 'Finished', averageScore: 86 },
@@ -109,7 +109,7 @@ async function fetchAnimeList(page = 1, perPage = 50, search = '') {
   const variables = { page, perPage, search: search || undefined };
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000); // 5 сек таймаут
+    const timeout = setTimeout(() => controller.abort(), 5000);
     const resp = await fetch(ANILIST_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -123,7 +123,6 @@ async function fetchAnimeList(page = 1, perPage = 50, search = '') {
     return json.data.Page;
   } catch (e) {
     console.warn('AniList API не отвечает, используем fallback', e);
-    // Возвращаем fallback с поиском по названию
     let list = FALLBACK_ANIME;
     if (search) {
       const q = search.toLowerCase();
@@ -137,7 +136,6 @@ async function fetchAnimeList(page = 1, perPage = 50, search = '') {
 }
 
 async function fetchAnimeById(id) {
-  // Проверяем в fallback
   const fallback = FALLBACK_ANIME.find(a => a.id === id);
   if (fallback) return fallback;
 
@@ -171,7 +169,7 @@ async function fetchAnimeById(id) {
   }
 }
 
-// ---------- ТРАНСЛИТЕРАЦИЯ ДЛЯ JUT.SU / YAMMUANIME ----------
+// ---------- ТРАНСЛИТЕРАЦИЯ И ГЕНЕРАЦИЯ ССЫЛОК ----------
 function transliterate(word) {
   const map = {
     'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z',
@@ -182,14 +180,37 @@ function transliterate(word) {
   return word.toLowerCase().split('').map(ch => map[ch] || ch).join('').replace(/[^a-z0-9]/g, '');
 }
 
-function generateJutSuUrl(title, episode) {
+function generateJutSuUrls(title, episode) {
   const slug = transliterate(title).replace(/\s+/g, '-');
-  return `https://jut.su/${slug}/season-1/episode-${episode}.html`;
+  return [
+    `https://jut.su/${slug}/season-1/episode-${episode}.html`,
+    `https://jut.su/${slug}/episode-${episode}.html`,
+    `https://jut.su/${slug}/season-1/episode-${episode}/`,
+    `https://jut.su/${slug}/episode-${episode}/`
+  ];
 }
 
-function generateYammuanimeUrl(title, episode) {
+function generateYammuanimeUrls(title, episode) {
   const slug = transliterate(title).replace(/\s+/g, '-');
-  return `https://yammuanime.com/anime/${slug}/episode-${episode}`;
+  const domains = ['tv', 'net'];
+  const urls = [];
+  for (const domain of domains) {
+    urls.push(`https://yammuanime.${domain}/anime/${slug}/episode-${episode}`);
+    urls.push(`https://yammuanime.${domain}/anime/${slug}/episode-${episode}/`);
+  }
+  return urls;
+}
+
+function generateYummyAnimeUrls(title, episode) {
+  const slug = transliterate(title).replace(/\s+/g, '-');
+  const domains = ['ru.yummyani.me', 'yummyani.me'];
+  const urls = [];
+  for (const domain of domains) {
+    urls.push(`https://${domain}/catalog/item/${slug}/episode-${episode}`);
+    urls.push(`https://${domain}/catalog/item/${slug}/episode-${episode}/`);
+    urls.push(`https://${domain}/catalog/item/${slug}/season-1/episode-${episode}`);
+  }
+  return urls;
 }
 
 // ---------- ПОИСК ВИДЕО (YouTube, VK) ----------
@@ -243,6 +264,7 @@ function getYouTubeSearchUrl(query) {
   return `https://www.youtube.com/embed/?listType=search&list=${encodeURIComponent(query)}`;
 }
 
+// ---------- ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ ВИДЕО ----------
 async function loadVideo(anime, episode, source = 'auto') {
   const iframe = $('#playerIframe');
   if (!iframe) return;
@@ -269,32 +291,52 @@ async function loadVideo(anime, episode, source = 'auto') {
     }
   }
 
-  if (source === 'jutsu') {
-    const url = generateJutSuUrl(title, episode);
-    iframe.src = url;
-    const manualArea = $('#manualLinkArea');
-    manualArea.style.display = 'flex';
-    $('#manualLinkInput').value = url;
-    // Кнопка поиска на Jut.su
-    let searchBtn = manualArea.querySelector('.jutsu-search-btn');
-    if (!searchBtn) {
-      searchBtn = document.createElement('button');
-      searchBtn.className = 'jutsu-search-btn';
-      searchBtn.textContent = '🔍 Поиск на Jut.su';
-      searchBtn.onclick = () => {
-        window.open(`https://jut.su/search/?q=${encodeURIComponent(title)}`, '_blank');
-      };
-      manualArea.appendChild(searchBtn);
+  if (source === 'jutsu' || source === 'yammuanime' || source === 'yummyanime') {
+    let urls = [];
+    if (source === 'jutsu') {
+      urls = generateJutSuUrls(title, episode);
+    } else if (source === 'yammuanime') {
+      urls = generateYammuanimeUrls(title, episode);
+    } else if (source === 'yummyanime') {
+      urls = generateYummyAnimeUrls(title, episode);
     }
-    return;
-  }
-
-  if (source === 'yammuanime') {
-    const url = generateYammuanimeUrl(title, episode);
-    iframe.src = url;
+    // Показываем первую ссылку в iframe
+    iframe.src = urls[0];
+    // Показываем поле для ручной правки и все варианты
     const manualArea = $('#manualLinkArea');
     manualArea.style.display = 'flex';
-    $('#manualLinkInput').value = url;
+    $('#manualLinkInput').value = urls[0];
+    // Добавляем кнопки выбора вариантов
+    let btnContainer = manualArea.querySelector('.url-variants');
+    if (!btnContainer) {
+      btnContainer = document.createElement('div');
+      btnContainer.className = 'url-variants';
+      btnContainer.style.cssText = 'display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.5rem; width:100%;';
+      manualArea.appendChild(btnContainer);
+    }
+    btnContainer.innerHTML = '';
+    urls.forEach(url => {
+      const btn = document.createElement('button');
+      btn.textContent = '📎 Вариант ' + (urls.indexOf(url) + 1);
+      btn.style.cssText = 'font-size:0.7rem; padding:0.2rem 0.6rem; background:var(--bg-button);';
+      btn.onclick = () => {
+        iframe.src = url;
+        $('#manualLinkInput').value = url;
+      };
+      btnContainer.appendChild(btn);
+    });
+    // Кнопка поиска в Google
+    let googleBtn = manualArea.querySelector('.google-search-btn');
+    if (!googleBtn) {
+      googleBtn = document.createElement('button');
+      googleBtn.className = 'google-search-btn';
+      googleBtn.textContent = '🔍 Поиск в Google';
+      googleBtn.style.cssText = 'background:#ea4335; color:white;';
+      googleBtn.onclick = () => {
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(title + ' серия ' + episode + ' смотреть онлайн')}`, '_blank');
+      };
+      manualArea.appendChild(googleBtn);
+    }
     return;
   }
 
@@ -330,7 +372,6 @@ async function renderHome() {
     if (searchInput) searchInput.value = STATE.searchQuery;
   } catch (e) {
     container.innerHTML = `<div class="loading">Ошибка загрузки: ${e.message}</div>`;
-    // Используем fallback
     const fallbackData = await fetchAnimeList(1, 50, STATE.searchQuery);
     STATE.animeList = fallbackData.media || [];
     renderAnimeGrid(STATE.animeList);
@@ -399,7 +440,6 @@ async function openAnimeDetail(id) {
   try {
     let anime = await fetchAnimeById(id);
     if (!anime) {
-      // Если не найдено, берём из fallback
       anime = FALLBACK_ANIME.find(a => a.id === id);
     }
     if (!anime) {
@@ -447,6 +487,7 @@ function renderAnimeDetail(anime) {
           <button data-source="vk">📺 VK</button>
           <button data-source="jutsu">🎬 Jut.su</button>
           <button data-source="yammuanime">🎬 Yammuanime</button>
+          <button data-source="yummyanime">🎬 YummyAnime</button>
           <button data-source="manual">🔗 Ссылка</button>
         </div>
         <div id="playerContent">
@@ -459,7 +500,8 @@ function renderAnimeDetail(anime) {
           </div>
         </div>
         <p style="margin-top:1rem; font-size:0.85rem; opacity:0.7;">
-          💡 Для VK нужен сервисный ключ (настройки в профиле). Jut.su / Yammuanime строят ссылки автоматически, но могут не работать – исправьте вручную.
+          💡 Для VK нужен сервисный ключ (настройки в профиле). 
+          Ссылки на Jut.su / Yammuanime / YummyAnime генерируются автоматически, но могут не работать – исправьте вручную.
         </p>
       </div>
     </div>
@@ -495,12 +537,16 @@ function renderAnimeDetail(anime) {
         manualArea.style.display = 'flex';
         const iframe = $('#playerIframe');
         if (iframe) iframe.src = '';
-        const oldBtn = manualArea.querySelector('.jutsu-search-btn');
-        if (oldBtn) oldBtn.remove();
+        const variants = manualArea.querySelector('.url-variants');
+        if (variants) variants.remove();
+        const googleBtn = manualArea.querySelector('.google-search-btn');
+        if (googleBtn) googleBtn.remove();
       } else {
         manualArea.style.display = 'none';
-        const oldBtn = manualArea.querySelector('.jutsu-search-btn');
-        if (oldBtn) oldBtn.remove();
+        const variants = manualArea.querySelector('.url-variants');
+        if (variants) variants.remove();
+        const googleBtn = manualArea.querySelector('.google-search-btn');
+        if (googleBtn) googleBtn.remove();
         loadVideo(anime, STATE.selectedEpisode, source);
       }
     });
@@ -818,4 +864,4 @@ loadState();
 document.documentElement.setAttribute('data-theme', STATE.theme);
 if (STATE.currentUser) updateUI();
 renderCurrentPage();
-console.log('AniList App запущен с fallback-списком аниме');
+console.log('AniList App с поддержкой YummyAnime');
